@@ -24,6 +24,8 @@ var (
 	ColorRed        = lipgloss.Color("#FF0000")
 	ColorMagenta    = lipgloss.Color("#FF00FF")
 	ColorBlue       = lipgloss.Color("#5555FF")
+	ColorPurple     = lipgloss.Color("#AA55FF")
+	ColorOrange     = lipgloss.Color("#FFA500")
 	ColorLightGreen = lipgloss.Color("#90EE90")
 
 	// Neutral colors

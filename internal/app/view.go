@@ -57,7 +57,7 @@ func (m Model) View() string {
 
 		outerBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ui.ColorCyan).
+			BorderForeground(ui.ColorPurple).
 			Width(contentWidth).
 			Padding(1, 2)
 
@@ -137,7 +137,7 @@ func (m Model) renderMainMenu() string {
 		menuLines = append(menuLines, "")
 	}
 
-	menuTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorCyan)
+	menuTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorOrange)
 	menuContent := menuTitleStyle.Render(" Select Mode ") + "\n" + strings.Join(menuLines, "\n")
 
 	// Build right column (info panel)
@@ -705,7 +705,7 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 
 	// Filter input at top
 	title := fmt.Sprintf("Select Repositories (%d/%d)", selectedCount, len(m.batchRepos))
-	filterBox := ui.FilterInput(m.batchFilter, title, ui.ColorCyan, filterWidth)
+	filterBox := ui.FilterInput(m.batchFilter, title, ui.ColorWhite, filterWidth)
 
 	// Get filtered repos for each column
 	feFiltered := m.getFilteredBatchRepos(0)
@@ -1272,19 +1272,19 @@ func (m Model) renderStatusBar() string {
 	switch m.screen {
 	case ScreenMainMenu:
 		hints = []string{
-			ui.KeyBinding("↑↓", "Navigate", ui.ColorCyan),
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
 	case ScreenPrTypeSelect:
 		hints = []string{
-			ui.KeyBinding("↑↓", "Navigate", ui.ColorCyan),
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
 	case ScreenCommitReview:
 		hints = []string{
-			ui.KeyBinding("↑↓", "Scroll", ui.ColorCyan),
+			ui.KeyBinding("↑↓", "Scroll", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Continue", ui.ColorGreen),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
@@ -1295,32 +1295,32 @@ func (m Model) renderStatusBar() string {
 		}
 	case ScreenConfirmation, ScreenBatchConfirmation, ScreenMergeConfirmation:
 		hints = []string{
-			ui.KeyBinding("←→", "Select", ui.ColorCyan),
+			ui.KeyBinding("←→", "Select", ui.ColorWhite),
 			ui.KeyBinding("y/n", "Quick", ui.ColorGreen),
 			ui.KeyBinding("Enter", "Confirm", ui.ColorGreen),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
 	case ScreenComplete:
 		hints = []string{
-			ui.KeyBinding("o", "Open URL", ui.ColorCyan),
-			ui.KeyBinding("c", "Copy URL", ui.ColorCyan),
+			ui.KeyBinding("o", "Open URL", ui.ColorBlue),
+			ui.KeyBinding("c", "Copy URL", ui.ColorBlue),
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 		}
 	case ScreenBatchRepoSelect:
 		hints = []string{
-			ui.KeyBinding("↑↓", "Navigate", ui.ColorCyan),
-			ui.KeyBinding("←→", "Column", ui.ColorCyan),
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
+			ui.KeyBinding("←→", "Column", ui.ColorWhite),
 			ui.KeyBinding("Space", "Toggle", ui.ColorGreen),
 			ui.KeyBinding("Tab", "Continue", ui.ColorGreen),
-			ui.KeyBinding("Type", "Filter", ui.ColorCyan),
+			ui.KeyBinding("Type", "Filter", ui.ColorYellow),
 		}
 	case ScreenViewOpenPrs:
 		hints = []string{
-			ui.KeyBinding("↑↓", "Navigate", ui.ColorCyan),
-			ui.KeyBinding("←→", "Column", ui.ColorCyan),
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
+			ui.KeyBinding("←→", "Column", ui.ColorWhite),
 			ui.KeyBinding("Space", "Toggle", ui.ColorGreen),
 			ui.KeyBinding("m", "Merge", ui.ColorMagenta),
-			ui.KeyBinding("r", "Refresh", ui.ColorCyan),
+			ui.KeyBinding("r", "Refresh", ui.ColorBlue),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
 	case ScreenError:
@@ -1330,15 +1330,15 @@ func (m Model) renderStatusBar() string {
 		}
 	case ScreenBatchSummary:
 		hints = []string{
-			ui.KeyBinding("o", "Open URLs", ui.ColorCyan),
-			ui.KeyBinding("c", "Copy URLs", ui.ColorCyan),
+			ui.KeyBinding("o", "Open URLs", ui.ColorBlue),
+			ui.KeyBinding("c", "Copy URLs", ui.ColorBlue),
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
 	case ScreenMergeSummary:
 		hints = []string{
-			ui.KeyBinding("o", "Open URLs", ui.ColorCyan),
-			ui.KeyBinding("c", "Copy URLs", ui.ColorCyan),
+			ui.KeyBinding("o", "Open URLs", ui.ColorBlue),
+			ui.KeyBinding("c", "Copy URLs", ui.ColorBlue),
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
