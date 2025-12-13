@@ -36,14 +36,17 @@ func (m Model) View() string {
 	sections = append(sections, ui.RenderBanner(m.dryRun))
 	sections = append(sections, "")
 
-	// Some screens manage their own layout (batch, view PRs)
-	// Others get wrapped in a standard outer box
-	if m.screen == ScreenBatchRepoSelect {
-		sections = append(sections, m.renderBatchRepoSelectWithHeight(availableHeight))
-	} else if m.screen == ScreenViewOpenPrs {
-		sections = append(sections, m.renderViewOpenPrsWithHeight(availableHeight))
+	// Screens that manage their own full layout (no outer box)
+	fullLayoutScreens := m.screen == ScreenBatchRepoSelect ||
+		m.screen == ScreenViewOpenPrs ||
+		m.screen == ScreenBatchSummary ||
+		m.screen == ScreenMergeSummary ||
+		m.screen == ScreenCommitReview
+
+	if fullLayoutScreens {
+		sections = append(sections, m.renderContentWithHeight(availableHeight))
 	} else {
-		// Standard outer box for other screens
+		// Standard outer box for simpler screens
 		contentWidth := m.width - 4
 		if contentWidth < 80 {
 			contentWidth = 80
@@ -58,7 +61,7 @@ func (m Model) View() string {
 			Width(contentWidth).
 			Padding(1, 2)
 
-		sections = append(sections, outerBox.Render(m.renderContent()))
+		sections = append(sections, outerBox.Render(m.renderContentWithHeight(availableHeight)))
 	}
 
 	// Status bar
@@ -71,7 +74,7 @@ func (m Model) View() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, content)
 }
 
-func (m Model) renderContent() string {
+func (m Model) renderContentWithHeight(availableHeight int) string {
 	switch m.screen {
 	case ScreenMainMenu:
 		return m.renderMainMenu()
@@ -80,7 +83,7 @@ func (m Model) renderContent() string {
 	case ScreenLoading:
 		return m.renderLoading()
 	case ScreenCommitReview:
-		return m.renderCommitReview()
+		return m.renderCommitReviewWithHeight(availableHeight)
 	case ScreenTitleInput:
 		return m.renderTitleInput()
 	case ScreenConfirmation:
@@ -92,21 +95,21 @@ func (m Model) renderContent() string {
 	case ScreenError:
 		return m.renderError()
 	case ScreenBatchRepoSelect:
-		return m.renderBatchRepoSelect()
+		return m.renderBatchRepoSelectWithHeight(availableHeight)
 	case ScreenBatchConfirmation:
 		return m.renderBatchConfirmation()
 	case ScreenBatchProcessing:
 		return m.renderBatchProcessing()
 	case ScreenBatchSummary:
-		return m.renderBatchSummary()
+		return m.renderBatchSummaryWithHeight(availableHeight)
 	case ScreenViewOpenPrs:
-		return m.renderViewOpenPrs()
+		return m.renderViewOpenPrsWithHeight(availableHeight)
 	case ScreenMergeConfirmation:
 		return m.renderMergeConfirmation()
 	case ScreenMerging:
 		return m.renderMerging()
 	case ScreenMergeSummary:
-		return m.renderMergeSummary()
+		return m.renderMergeSummaryWithHeight(availableHeight)
 	default:
 		return ""
 	}
@@ -259,7 +262,20 @@ func (m Model) renderLoading() string {
 	)
 }
 
-func (m Model) renderCommitReview() string {
+func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
+	// Dynamic column sizing
+	columnWidth := (m.width - 6) / 2
+	if columnWidth < 40 {
+		columnWidth = 40
+	}
+	if columnWidth > 60 {
+		columnWidth = 60
+	}
+	panelHeight := availableHeight - 2
+	if panelHeight < 10 {
+		panelHeight = 10
+	}
+
 	// Build left column (commits list)
 	var commitLines []string
 	commitLines = append(commitLines, "")
@@ -343,7 +359,11 @@ func (m Model) renderCommitReview() string {
 
 	rightContent := strings.Join(rightLines, "\n")
 
-	return ui.UnifiedPanel(commitContent, rightContent, 60, 35, ui.ColorCyan)
+	// Use ColumnBox for consistent sizing
+	leftColumn := ui.ColumnBox(commitContent, "", ui.ColorCyan, true, columnWidth, panelHeight)
+	rightColumn := ui.ColumnBox(rightContent, "", ui.ColorWhite, false, columnWidth-10, panelHeight)
+
+	return ui.TwoColumns(leftColumn, rightColumn, 2)
 }
 
 func (m Model) renderTitleInput() string {
@@ -657,10 +677,6 @@ func (m Model) renderError() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderBatchRepoSelect() string {
-	return m.renderBatchRepoSelectWithHeight(20) // Default fallback
-}
-
 func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 	selectedCount := 0
 	for _, s := range m.batchSelected {
@@ -897,7 +913,7 @@ func (m Model) renderBatchProcessing() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderBatchSummary() string {
+func (m Model) renderBatchSummaryWithHeight(availableHeight int) string {
 	var lines []string
 
 	// Count results by status
@@ -1030,11 +1046,18 @@ func (m Model) renderBatchSummary() string {
 		lines = append(lines, m.renderConfetti())
 	}
 
-	return strings.Join(lines, "\n")
-}
+	content := strings.Join(lines, "\n")
 
-func (m Model) renderViewOpenPrs() string {
-	return m.renderViewOpenPrsWithHeight(20) // Default fallback
+	// Wrap in a box with dynamic sizing
+	boxWidth := m.width - 10
+	if boxWidth < 60 {
+		boxWidth = 60
+	}
+	if boxWidth > 100 {
+		boxWidth = 100
+	}
+
+	return ui.ColumnBox(content, " Batch Summary ", ui.ColorGreen, true, boxWidth, availableHeight)
 }
 
 func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
@@ -1057,17 +1080,17 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 			dimStyle.Render("All repositories are up to date!"))
 	}
 
-	// Column dimensions
-	columnWidth := (m.width - 6) / 2
+	// Column dimensions - use most of terminal width
+	columnWidth := (m.width - 8) / 2 // Split width evenly with gap
 	if columnWidth < 40 {
 		columnWidth = 40
 	}
-	if columnWidth > 50 {
-		columnWidth = 50
-	}
-	columnHeight := availableHeight - 2 // Account for gap
-	if columnHeight < 5 {
-		columnHeight = 5
+	// No max cap - let columns expand to fill space
+
+	// Column height for equal sizing
+	columnHeight := availableHeight - 2
+	if columnHeight < 8 {
+		columnHeight = 8
 	}
 
 	// Build Dev → Staging column
@@ -1085,7 +1108,7 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 				selected = m.mergeSelected[i]
 			}
 			highlighted := m.mergeColumn == 0 && m.mergeDevIndex == devCount-1
-			devLines = append(devLines, ui.PRListItem(name, pr.PrNumber, pr.PrTitle, pr.URL, selected, highlighted, ui.ColorGreen))
+			devLines = append(devLines, ui.PRListItem(name, pr.PrNumber, pr.PrType.HeadBranch(), pr.PrType.BaseBranch(pr.Repo.MainBranch), pr.URL, selected, highlighted, ui.ColorGreen))
 		}
 	}
 	if devCount == 0 {
@@ -1107,7 +1130,7 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 				selected = m.mergeSelected[i]
 			}
 			highlighted := m.mergeColumn == 1 && m.mergeMainIndex == mainCount-1
-			mainLines = append(mainLines, ui.PRListItem(name, pr.PrNumber, pr.PrTitle, pr.URL, selected, highlighted, ui.ColorRed))
+			mainLines = append(mainLines, ui.PRListItem(name, pr.PrNumber, pr.PrType.HeadBranch(), pr.PrType.BaseBranch(pr.Repo.MainBranch), pr.URL, selected, highlighted, ui.ColorRed))
 		}
 	}
 	if mainCount == 0 {
@@ -1121,6 +1144,7 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 	devContent := devHeader + "\n\n" + strings.Join(devLines, "\n")
 	mainContent := mainHeader + "\n\n" + strings.Join(mainLines, "\n")
 
+	// Use same height for both columns so they align at bottom
 	devColumn := ui.ColumnBox(devContent, "", ui.ColorGreen, m.mergeColumn == 0, columnWidth, columnHeight)
 	mainColumn := ui.ColumnBox(mainContent, "", ui.ColorRed, m.mergeColumn == 1, columnWidth, columnHeight)
 
@@ -1172,7 +1196,7 @@ func (m Model) renderMerging() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderMergeSummary() string {
+func (m Model) renderMergeSummaryWithHeight(availableHeight int) string {
 	var lines []string
 
 	// Count successes and failures
@@ -1228,7 +1252,18 @@ func (m Model) renderMergeSummary() string {
 		))
 	}
 
-	return strings.Join(lines, "\n")
+	content := strings.Join(lines, "\n")
+
+	// Wrap in a box with dynamic sizing
+	boxWidth := m.width - 10
+	if boxWidth < 50 {
+		boxWidth = 50
+	}
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+
+	return ui.ColumnBox(content, " Merge Summary ", headerColor, true, boxWidth, availableHeight)
 }
 
 func (m Model) renderStatusBar() string {

@@ -431,7 +431,7 @@ func RepoListItem(name string, selected bool, highlighted bool, color lipgloss.C
 }
 
 // PRListItem renders a PR item for the open PRs view
-func PRListItem(repoName string, prNumber uint64, prTitle string, prURL string, selected bool, highlighted bool, color lipgloss.Color) string {
+func PRListItem(repoName string, prNumber uint64, headBranch string, baseBranch string, prURL string, selected bool, highlighted bool, color lipgloss.Color) string {
 	checkbox := Checkbox(selected)
 	cursor := " "
 	if highlighted {
@@ -450,12 +450,14 @@ func PRListItem(repoName string, prNumber uint64, prTitle string, prURL string, 
 	nameStyle := lipgloss.NewStyle().Bold(true)
 	urlStyle := lipgloss.NewStyle().Foreground(ColorCyan)
 
-	// Truncate title if too long
-	maxTitleLen := 35
-	titleDisplay := prTitle
-	if len(prTitle) > maxTitleLen {
-		titleDisplay = prTitle[:maxTitleLen] + "..."
-	}
+	// Colored branch flow
+	headColor := BranchColor(headBranch)
+	baseColor := BranchColor(baseBranch)
+	headStyle := lipgloss.NewStyle().Foreground(headColor).Bold(true)
+	baseStyle := lipgloss.NewStyle().Foreground(baseColor).Bold(true)
+	arrowStyle := lipgloss.NewStyle().Foreground(ColorWhite)
+
+	branchFlow := headStyle.Render(headBranch) + arrowStyle.Render(" → ") + baseStyle.Render(baseBranch)
 
 	line1 := fmt.Sprintf("  %s %s %s  #%d",
 		checkStyle.Render(cursor),
@@ -463,7 +465,7 @@ func PRListItem(repoName string, prNumber uint64, prTitle string, prURL string, 
 		nameStyle.Render(repoName),
 		prNumber,
 	)
-	line2 := fmt.Sprintf("        %s", urlStyle.Render(titleDisplay))
+	line2 := fmt.Sprintf("        %s", branchFlow)
 	line3 := fmt.Sprintf("        %s", urlStyle.Render(prURL))
 
 	return line1 + "\n" + line2 + "\n" + line3
