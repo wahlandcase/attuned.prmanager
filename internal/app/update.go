@@ -198,6 +198,10 @@ func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menuIndex++
 		}
 	case "enter":
+		// Don't allow continuing if there are no commits
+		if len(m.commits) == 0 {
+			return m, nil
+		}
 		// Set default title and go to title input
 		if m.prType != nil {
 			mainBranch := "main"
@@ -389,7 +393,7 @@ func (m Model) handleBatchRepoSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeySpace:
 		m.toggleBatchSelection()
 	case tea.KeyTab, tea.KeyEnter:
-		// Count selected
+		// Count selected - do nothing if none selected
 		count := 0
 		for _, selected := range m.batchSelected {
 			if selected {
@@ -397,14 +401,12 @@ func (m Model) handleBatchRepoSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if count == 0 {
-			m.errorMessage = "No repositories selected"
-			m.screen = ScreenError
-		} else {
-			if m.prType != nil {
-				m.prTitle = m.prType.DefaultTitle("main")
-			}
-			m.screen = ScreenTitleInput
+			return m, nil
 		}
+		if m.prType != nil {
+			m.prTitle = m.prType.DefaultTitle("main")
+		}
+		m.screen = ScreenTitleInput
 	case tea.KeyEsc:
 		m.screen = ScreenPrTypeSelect
 		m.prType = nil

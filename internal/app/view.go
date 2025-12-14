@@ -220,29 +220,29 @@ func (m Model) renderPrTypeSelect() string {
 	infoLines = append(infoLines, "")
 
 	if m.menuIndex == 0 {
-		titleStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
-		infoLines = append(infoLines, titleStyle.Render("  Development → Staging"))
+		greenStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+		yellowStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+		arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite).Bold(true)
+		infoLines = append(infoLines, "  "+greenStyle.Render("dev")+arrowStyle.Render(" → ")+yellowStyle.Render("staging"))
 		infoLines = append(infoLines, "")
 		infoLines = append(infoLines, "  Merge feature branches into")
 		infoLines = append(infoLines, "  staging for QA testing.")
 		infoLines = append(infoLines, "")
 		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-		baseStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
-		headStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
-		infoLines = append(infoLines, labelStyle.Render("  Base: ")+baseStyle.Render("staging"))
-		infoLines = append(infoLines, labelStyle.Render("  Head: ")+headStyle.Render("dev"))
+		infoLines = append(infoLines, labelStyle.Render("  Base: ")+yellowStyle.Render("staging"))
+		infoLines = append(infoLines, labelStyle.Render("  Head: ")+greenStyle.Render("dev"))
 	} else {
-		titleStyle := lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
-		infoLines = append(infoLines, titleStyle.Render("  Staging → Production"))
+		yellowStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+		redStyle := lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
+		arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite).Bold(true)
+		infoLines = append(infoLines, "  "+yellowStyle.Render("staging")+arrowStyle.Render(" → ")+redStyle.Render(mainBranch))
 		infoLines = append(infoLines, "")
 		infoLines = append(infoLines, "  Release staging changes to")
 		infoLines = append(infoLines, "  production environment.")
 		infoLines = append(infoLines, "")
 		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-		baseStyle := lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
-		headStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
-		infoLines = append(infoLines, labelStyle.Render("  Base: ")+baseStyle.Render(mainBranch))
-		infoLines = append(infoLines, labelStyle.Render("  Head: ")+headStyle.Render("staging"))
+		infoLines = append(infoLines, labelStyle.Render("  Base: ")+redStyle.Render(mainBranch))
+		infoLines = append(infoLines, labelStyle.Render("  Head: ")+yellowStyle.Render("staging"))
 	}
 
 	infoTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorWhite)
@@ -353,9 +353,14 @@ func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
 	}
 
 	rightLines = append(rightLines, "")
-	continueStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-	enterStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
-	rightLines = append(rightLines, continueStyle.Render("  Press ")+enterStyle.Render("Enter")+" to continue")
+	if len(m.commits) > 0 {
+		continueStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+		enterStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+		rightLines = append(rightLines, continueStyle.Render("  Press ")+enterStyle.Render("Enter")+" to continue")
+	} else {
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		rightLines = append(rightLines, dimStyle.Render("  Nothing to merge"))
+	}
 
 	rightContent := strings.Join(rightLines, "\n")
 
@@ -1283,10 +1288,16 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
 	case ScreenCommitReview:
-		hints = []string{
-			ui.KeyBinding("↑↓", "Scroll", ui.ColorWhite),
-			ui.KeyBinding("Enter", "Continue", ui.ColorGreen),
-			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+		if len(m.commits) > 0 {
+			hints = []string{
+				ui.KeyBinding("↑↓", "Scroll", ui.ColorWhite),
+				ui.KeyBinding("Enter", "Continue", ui.ColorGreen),
+				ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+			}
+		} else {
+			hints = []string{
+				ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+			}
 		}
 	case ScreenTitleInput:
 		hints = []string{
@@ -1315,13 +1326,20 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("Type", "Filter", ui.ColorYellow),
 		}
 	case ScreenViewOpenPrs:
-		hints = []string{
-			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
-			ui.KeyBinding("←→", "Column", ui.ColorWhite),
-			ui.KeyBinding("Space", "Toggle", ui.ColorGreen),
-			ui.KeyBinding("m", "Merge", ui.ColorMagenta),
-			ui.KeyBinding("r", "Refresh", ui.ColorBlue),
-			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+		if len(m.mergePRs) == 0 {
+			hints = []string{
+				ui.KeyBinding("r", "Refresh", ui.ColorBlue),
+				ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+			}
+		} else {
+			hints = []string{
+				ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
+				ui.KeyBinding("←→", "Column", ui.ColorWhite),
+				ui.KeyBinding("Space", "Toggle", ui.ColorGreen),
+				ui.KeyBinding("m", "Merge", ui.ColorMagenta),
+				ui.KeyBinding("r", "Refresh", ui.ColorBlue),
+				ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+			}
 		}
 	case ScreenError:
 		hints = []string{
