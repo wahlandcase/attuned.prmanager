@@ -50,5 +50,10 @@ func (p PrType) Display(mainBranch string) string {
 
 // DefaultTitle returns the default PR title
 func (p PrType) DefaultTitle(mainBranch string) string {
-	return p.Display(mainBranch)
+	switch p {
+	case StagingToMain:
+		return "Sprint #"
+	default:
+		return p.Display(mainBranch)
+	}
 }
