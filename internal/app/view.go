@@ -716,8 +716,9 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 	feFiltered := m.getFilteredBatchRepos(0)
 	beFiltered := m.getFilteredBatchRepos(1)
 
-	// Build Frontend column
+	// Build Frontend column - track line index for highlighted item
 	var feLines []string
+	feHighlightedLine := -1
 	feLines = append(feLines, ui.SectionHeader(fmt.Sprintf("🖥️  FRONTEND (%d)", len(feFiltered)), ui.ColorCyan))
 	feLines = append(feLines, "")
 
@@ -746,6 +747,9 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 				selected = m.batchSelected[repoIdx]
 			}
 			highlighted := m.batchColumn == 0 && m.batchFEIndex == i
+			if highlighted {
+				feHighlightedLine = len(feLines)
+			}
 
 			// Indent nested repos
 			indent := ""
@@ -756,8 +760,9 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 		}
 	}
 
-	// Build Backend column
+	// Build Backend column - track line index for highlighted item
 	var beLines []string
+	beHighlightedLine := -1
 	beLines = append(beLines, ui.SectionHeader(fmt.Sprintf("⚙️  BACKEND (%d)", len(beFiltered)), ui.ColorMagenta))
 	beLines = append(beLines, "")
 
@@ -786,6 +791,9 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 				selected = m.batchSelected[repoIdx]
 			}
 			highlighted := m.batchColumn == 1 && m.batchBEIndex == i
+			if highlighted {
+				beHighlightedLine = len(beLines)
+			}
 
 			// Indent nested repos
 			indent := ""
@@ -796,9 +804,16 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 		}
 	}
 
-	// Create columns with fixed dimensions
-	feContent := strings.Join(feLines, "\n")
-	beContent := strings.Join(beLines, "\n")
+	// Apply viewport scrolling to keep highlighted item visible
+	// Keep 2-line header, scroll the rest
+	headerLines := 2
+	visibleContentLines := columnHeight - headerLines
+	if visibleContentLines < 1 {
+		visibleContentLines = 1
+	}
+
+	feContent := applyViewportScroll(feLines, headerLines, feHighlightedLine, visibleContentLines)
+	beContent := applyViewportScroll(beLines, headerLines, beHighlightedLine, visibleContentLines)
 
 	feColumn := ui.ColumnBox(feContent, "", ui.ColorCyan, m.batchColumn == 0, columnWidth, columnHeight)
 	beColumn := ui.ColumnBox(beContent, "", ui.ColorMagenta, m.batchColumn == 1, columnWidth, columnHeight)
@@ -806,6 +821,50 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 	columns := ui.TwoColumns(feColumn, beColumn, 2)
 
 	return filterBox + "\n\n" + columns
+}
+
+// applyViewportScroll scrolls content to keep the highlighted line visible
+func applyViewportScroll(lines []string, headerLines int, highlightedLine int, visibleLines int) string {
+	if len(lines) <= headerLines+visibleLines {
+		// No scrolling needed
+		return strings.Join(lines, "\n")
+	}
+
+	// Keep header lines fixed
+	header := lines[:headerLines]
+	content := lines[headerLines:]
+
+	if highlightedLine < 0 || highlightedLine < headerLines {
+		// No highlight or highlight is in header, show from top
+		if len(content) > visibleLines {
+			content = content[:visibleLines]
+		}
+		return strings.Join(append(header, content...), "\n")
+	}
+
+	// Calculate scroll offset to keep highlighted line visible
+	highlightInContent := highlightedLine - headerLines
+	scrollOffset := 0
+
+	// Keep some padding around the highlighted item
+	padding := 2
+	if highlightInContent >= visibleLines-padding {
+		scrollOffset = highlightInContent - visibleLines + padding + 1
+	}
+	if scrollOffset > len(content)-visibleLines {
+		scrollOffset = len(content) - visibleLines
+	}
+	if scrollOffset < 0 {
+		scrollOffset = 0
+	}
+
+	endOffset := scrollOffset + visibleLines
+	if endOffset > len(content) {
+		endOffset = len(content)
+	}
+
+	visibleContent := content[scrollOffset:endOffset]
+	return strings.Join(append(header, visibleContent...), "\n")
 }
 
 func (m Model) renderBatchConfirmation() string {
@@ -1098,12 +1157,16 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 		columnHeight = 8
 	}
 
-	// Build Dev → Staging column
+	// Build Dev → Staging column - track highlighted line
 	var devLines []string
+	devHighlightedLine := -1
+	devHeader := ui.SectionHeader(fmt.Sprintf("DEV → STAGING (%d)", 0), ui.ColorGreen) // placeholder count
+	devLines = append(devLines, devHeader)
+	devLines = append(devLines, "")
+
 	devCount := 0
 	for i, pr := range m.mergePRs {
 		if pr.PrType == models.DevToStaging {
-			devCount++
 			name := pr.Repo.DisplayName
 			if idx := strings.LastIndex(name, "/"); idx != -1 {
 				name = name[idx+1:]
@@ -1112,20 +1175,30 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 			if i < len(m.mergeSelected) {
 				selected = m.mergeSelected[i]
 			}
-			highlighted := m.mergeColumn == 0 && m.mergeDevIndex == devCount-1
+			highlighted := m.mergeColumn == 0 && m.mergeDevIndex == devCount
+			if highlighted {
+				devHighlightedLine = len(devLines)
+			}
 			devLines = append(devLines, ui.PRListItem(name, pr.PrNumber, pr.PrType.HeadBranch(), pr.PrType.BaseBranch(pr.Repo.MainBranch), pr.URL, selected, highlighted, ui.ColorGreen))
+			devCount++
 		}
 	}
+	// Update header with actual count
+	devLines[0] = ui.SectionHeader(fmt.Sprintf("DEV → STAGING (%d)", devCount), ui.ColorGreen)
 	if devCount == 0 {
 		devLines = append(devLines, "    No open PRs")
 	}
 
-	// Build Staging → Main column
+	// Build Staging → Main column - track highlighted line
 	var mainLines []string
+	mainHighlightedLine := -1
+	mainHeader := ui.SectionHeader(fmt.Sprintf("STAGING → MAIN (%d)", 0), ui.ColorRed) // placeholder count
+	mainLines = append(mainLines, mainHeader)
+	mainLines = append(mainLines, "")
+
 	mainCount := 0
 	for i, pr := range m.mergePRs {
 		if pr.PrType == models.StagingToMain {
-			mainCount++
 			name := pr.Repo.DisplayName
 			if idx := strings.LastIndex(name, "/"); idx != -1 {
 				name = name[idx+1:]
@@ -1134,20 +1207,29 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 			if i < len(m.mergeSelected) {
 				selected = m.mergeSelected[i]
 			}
-			highlighted := m.mergeColumn == 1 && m.mergeMainIndex == mainCount-1
+			highlighted := m.mergeColumn == 1 && m.mergeMainIndex == mainCount
+			if highlighted {
+				mainHighlightedLine = len(mainLines)
+			}
 			mainLines = append(mainLines, ui.PRListItem(name, pr.PrNumber, pr.PrType.HeadBranch(), pr.PrType.BaseBranch(pr.Repo.MainBranch), pr.URL, selected, highlighted, ui.ColorRed))
+			mainCount++
 		}
 	}
+	// Update header with actual count
+	mainLines[0] = ui.SectionHeader(fmt.Sprintf("STAGING → MAIN (%d)", mainCount), ui.ColorRed)
 	if mainCount == 0 {
 		mainLines = append(mainLines, "    No open PRs")
 	}
 
-	// Create header and columns
-	devHeader := ui.SectionHeader(fmt.Sprintf("DEV → STAGING (%d)", devCount), ui.ColorGreen)
-	mainHeader := ui.SectionHeader(fmt.Sprintf("STAGING → MAIN (%d)", mainCount), ui.ColorRed)
+	// Apply viewport scrolling to keep highlighted item visible
+	headerLines := 2
+	visibleContentLines := columnHeight - headerLines
+	if visibleContentLines < 1 {
+		visibleContentLines = 1
+	}
 
-	devContent := devHeader + "\n\n" + strings.Join(devLines, "\n")
-	mainContent := mainHeader + "\n\n" + strings.Join(mainLines, "\n")
+	devContent := applyViewportScroll(devLines, headerLines, devHighlightedLine, visibleContentLines)
+	mainContent := applyViewportScroll(mainLines, headerLines, mainHighlightedLine, visibleContentLines)
 
 	// Use same height for both columns so they align at bottom
 	devColumn := ui.ColumnBox(devContent, "", ui.ColorGreen, m.mergeColumn == 0, columnWidth, columnHeight)
