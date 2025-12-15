@@ -33,19 +33,19 @@ func BranchFlowDiagram(head, base string) string {
 	baseBoldStyle := lipgloss.NewStyle().Foreground(baseColor).Bold(true)
 	arrowStyle := lipgloss.NewStyle().Foreground(ColorCyan)
 
-	// Center the text in the boxes
-	headText := centerText(head, 5)
+	// Center the text in the boxes (7 chars to fit "staging")
+	headText := centerText(head, 7)
 	baseText := centerText(base, 7)
 
-	// Create box components
-	topLeft := headStyle.Render("  ┌───────┐")
+	// Create box components (9 dashes = 7 chars + 2 padding)
+	topLeft := headStyle.Render("  ┌─────────┐")
 	topRight := baseStyle.Render("┌─────────┐")
 
 	middleLeft := headStyle.Render("  │ ") + headBoldStyle.Render(headText) + headStyle.Render(" │")
 	arrow := arrowStyle.Render("  ====>  ")
 	middleRight := baseStyle.Render("│ ") + baseBoldStyle.Render(baseText) + baseStyle.Render(" │")
 
-	bottomLeft := headStyle.Render("  └───────┘")
+	bottomLeft := headStyle.Render("  └─────────┘")
 	bottomRight := baseStyle.Render("└─────────┘")
 
 	// Combine into lines
