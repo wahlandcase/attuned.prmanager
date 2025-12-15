@@ -356,8 +356,13 @@ func ColumnBox(content string, title string, color lipgloss.Color, isActive bool
 		BorderForeground(borderColor).
 		Width(width)
 
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color)
-	fullContent := titleStyle.Render(" "+title+" ") + "\n" + content
+	var fullContent string
+	if title != "" {
+		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color)
+		fullContent = titleStyle.Render(" "+title+" ") + "\n" + content
+	} else {
+		fullContent = content
+	}
 
 	// Manually pad/truncate to fixed height
 	if height > 0 {

@@ -129,7 +129,7 @@ func GetOpenReleasePRs(repoPath, mainBranch string) *models.RepoPrStatus {
 	}
 }
 
-// GeneratePRBody generates PR body with ticket links
+// GeneratePRBody generates PR body with ticket links using Linear magic words
 func GeneratePRBody(tickets []string) string {
 	if len(tickets) == 0 {
 		return ""
@@ -141,7 +141,7 @@ func GeneratePRBody(tickets []string) string {
 		ticketLinks = append(ticketLinks, link)
 	}
 
-	return fmt.Sprintf("## Tickets\n\n%s", strings.Join(ticketLinks, "\n"))
+	return fmt.Sprintf("Resolves Tickets\n_______________\n%s", strings.Join(ticketLinks, "\n"))
 }
 
 // MergePR merges a PR using regular merge (not squash)

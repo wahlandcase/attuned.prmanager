@@ -122,10 +122,10 @@ func (m Model) renderMainMenu() string {
 		desc  string
 		color lipgloss.Color
 	}{
-		{"📦", "SINGLE REPO", "Create PR for current repo", ui.ColorCyan},
-		{"🚀", "BATCH MODE", "Create PRs for multiple repos", ui.ColorMagenta},
-		{"👀", "VIEW OPEN PRS", "See all open release PRs", ui.ColorYellow},
-		{"❌", "QUIT", "Exit application", ui.ColorRed},
+		{"1.", "SINGLE REPO", "Create PR for current repo", ui.ColorCyan},
+		{"2.", "BATCH MODE", "Create PRs for multiple repos", ui.ColorMagenta},
+		{"3.", "VIEW OPEN PRS", "See all open release PRs", ui.ColorYellow},
+		{"4.", "QUIT", "Exit application", ui.ColorRed},
 	}
 
 	// Build left column (menu) content
@@ -159,15 +159,15 @@ func (m Model) renderPrTypeSelect() string {
 	menuLines = append(menuLines, "")
 
 	types := []struct {
-		icon      string
+		num       string
 		head      string
 		base      string
 		desc      string
 		headColor lipgloss.Color
 		baseColor lipgloss.Color
 	}{
-		{"🔄", "dev", "staging", "Merge to staging for QA", ui.ColorGreen, ui.ColorYellow},
-		{"🚀", "staging", mainBranch, "Release to production", ui.ColorYellow, ui.ColorRed},
+		{"1.", "dev", "staging", "Merge to staging for QA", ui.ColorGreen, ui.ColorYellow},
+		{"2.", "staging", mainBranch, "Release to production", ui.ColorYellow, ui.ColorRed},
 	}
 
 	for i, t := range types {
@@ -182,21 +182,23 @@ func (m Model) renderPrTypeSelect() string {
 			// Render with full-width background
 			rowStyle := lipgloss.NewStyle().Background(ui.ColorDarkGray).Width(46)
 			arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Background(ui.ColorDarkGray)
-			iconStyle := lipgloss.NewStyle().Background(ui.ColorDarkGray)
+			numStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true).Background(ui.ColorDarkGray)
 			headStyle := lipgloss.NewStyle().Foreground(t.headColor).Bold(true).Background(ui.ColorDarkGray)
 			baseStyle := lipgloss.NewStyle().Foreground(t.baseColor).Bold(true).Background(ui.ColorDarkGray)
 			descStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite).Background(ui.ColorDarkGray)
+			bgStyle := lipgloss.NewStyle().Background(ui.ColorDarkGray)
 
-			line1 = rowStyle.Render(arrowStyle.Render(arrow) + iconStyle.Render(t.icon+"  ") + headStyle.Render(t.head) + iconStyle.Render(" → ") + baseStyle.Render(t.base))
-			line2 = rowStyle.Render("       " + descStyle.Render(t.desc))
+			line1 = rowStyle.Render(arrowStyle.Render(arrow) + numStyle.Render(t.num) + bgStyle.Render(" ") + headStyle.Render(t.head) + bgStyle.Render(" → ") + baseStyle.Render(t.base))
+			line2 = rowStyle.Render("      " + descStyle.Render(t.desc))
 		} else {
 			arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+			numStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
 			headStyle := lipgloss.NewStyle().Foreground(t.headColor).Bold(true)
 			baseStyle := lipgloss.NewStyle().Foreground(t.baseColor).Bold(true)
 			descStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
 
-			line1 = arrowStyle.Render(arrow) + t.icon + "  " + headStyle.Render(t.head) + " → " + baseStyle.Render(t.base)
-			line2 = "       " + descStyle.Render(t.desc)
+			line1 = arrowStyle.Render(arrow) + numStyle.Render(t.num) + " " + headStyle.Render(t.head) + " → " + baseStyle.Render(t.base)
+			line2 = "      " + descStyle.Render(t.desc)
 		}
 
 		menuLines = append(menuLines, line1)
@@ -501,7 +503,8 @@ func (m Model) renderConfirmation() string {
 		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
 		leftLines = append(leftLines, dimStyle.Render("  (empty)"))
 	} else {
-		leftLines = append(leftLines, "  ## Tickets")
+		leftLines = append(leftLines, "  Resolves Tickets")
+		leftLines = append(leftLines, "  _______________")
 		for _, ticket := range m.tickets {
 			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
 			urlStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
@@ -834,28 +837,23 @@ func applyViewportScroll(lines []string, headerLines int, highlightedLine int, v
 	header := lines[:headerLines]
 	content := lines[headerLines:]
 
-	if highlightedLine < 0 || highlightedLine < headerLines {
-		// No highlight or highlight is in header, show from top
-		if len(content) > visibleLines {
-			content = content[:visibleLines]
-		}
-		return strings.Join(append(header, content...), "\n")
-	}
-
-	// Calculate scroll offset to keep highlighted line visible
-	highlightInContent := highlightedLine - headerLines
 	scrollOffset := 0
 
-	// Keep some padding around the highlighted item
-	padding := 2
-	if highlightInContent >= visibleLines-padding {
-		scrollOffset = highlightInContent - visibleLines + padding + 1
-	}
-	if scrollOffset > len(content)-visibleLines {
-		scrollOffset = len(content) - visibleLines
-	}
-	if scrollOffset < 0 {
-		scrollOffset = 0
+	if highlightedLine >= headerLines {
+		// Calculate scroll offset to keep highlighted line visible
+		highlightInContent := highlightedLine - headerLines
+
+		// Keep some padding around the highlighted item
+		padding := 2
+		if highlightInContent >= visibleLines-padding {
+			scrollOffset = highlightInContent - visibleLines + padding + 1
+		}
+		if scrollOffset > len(content)-visibleLines {
+			scrollOffset = len(content) - visibleLines
+		}
+		if scrollOffset < 0 {
+			scrollOffset = 0
+		}
 	}
 
 	endOffset := scrollOffset + visibleLines
@@ -863,7 +861,22 @@ func applyViewportScroll(lines []string, headerLines int, highlightedLine int, v
 		endOffset = len(content)
 	}
 
-	visibleContent := content[scrollOffset:endOffset]
+	// Build visible content with scroll indicators (copy to avoid mutating original)
+	visibleContent := make([]string, endOffset-scrollOffset)
+	copy(visibleContent, content[scrollOffset:endOffset])
+
+	// Add scroll indicators
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+	hasAbove := scrollOffset > 0
+	hasBelow := endOffset < len(content)
+
+	if hasAbove {
+		visibleContent[0] = dimStyle.Render("  ▲ more above")
+	}
+	if hasBelow {
+		visibleContent[len(visibleContent)-1] = dimStyle.Render("  ▼ more below")
+	}
+
 	return strings.Join(append(header, visibleContent...), "\n")
 }
 
@@ -1359,12 +1372,14 @@ func (m Model) renderStatusBar() string {
 	switch m.screen {
 	case ScreenMainMenu:
 		hints = []string{
+			ui.KeyBinding("1-4", "Select", ui.ColorYellow),
 			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
 	case ScreenPrTypeSelect:
 		hints = []string{
+			ui.KeyBinding("1-2", "Select", ui.ColorYellow),
 			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),

@@ -105,6 +105,18 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		return m.selectMainMenuItem()
+	case "1":
+		m.menuIndex = 0
+		return m.selectMainMenuItem()
+	case "2":
+		m.menuIndex = 1
+		return m.selectMainMenuItem()
+	case "3":
+		m.menuIndex = 2
+		return m.selectMainMenuItem()
+	case "4":
+		m.menuIndex = 3
+		return m.selectMainMenuItem()
 	}
 	return m, nil
 }
@@ -153,6 +165,12 @@ func (m Model) handlePrTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menuIndex = 0
 		}
 	case "enter":
+		return m.selectPrType()
+	case "1":
+		m.menuIndex = 0
+		return m.selectPrType()
+	case "2":
+		m.menuIndex = 1
 		return m.selectPrType()
 	case "esc":
 		m.screen = ScreenMainMenu
