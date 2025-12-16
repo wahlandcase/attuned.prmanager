@@ -3,7 +3,9 @@ package app
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"attuned-release/internal/models"
 	"attuned-release/internal/ui"
@@ -270,97 +272,159 @@ func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
 		panelHeight = 10
 	}
 
-	// Build left column (commits list)
+	mainBranch := "main"
+	if m.repoInfo != nil {
+		mainBranch = m.repoInfo.MainBranch
+	}
+
+	// Build LEFT column (PR info + title input + tickets)
+	var leftLines []string
+
+	// PR Info section
+	if m.repoInfo != nil {
+		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		valueStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true)
+		leftLines = append(leftLines, labelStyle.Render("  Repo: ")+valueStyle.Render(m.repoInfo.DisplayName))
+	}
+
+	if m.prType != nil {
+		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+		headBranch := m.prType.HeadBranch()
+		baseBranch := m.prType.BaseBranch(mainBranch)
+		headStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(headBranch)).Bold(true)
+		baseStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(baseBranch)).Bold(true)
+		leftLines = append(leftLines, labelStyle.Render("  Type: ")+headStyle.Render(headBranch)+arrowStyle.Render(" → ")+baseStyle.Render(baseBranch))
+	}
+
+	leftLines = append(leftLines, "")
+
+	// Title input section
+	if len(m.commits) > 0 {
+		titleSectionStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorYellow)
+		leftLines = append(leftLines, titleSectionStyle.Render(" PR Title "))
+		leftLines = append(leftLines, "")
+
+		defaultTitle := ""
+		if m.prType != nil {
+			defaultTitle = m.prType.DefaultTitle(mainBranch)
+		}
+
+		borderStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
+		cursorStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
+
+		var displayText string
+		var textColor lipgloss.Color
+		if m.prTitle == "" {
+			displayText = defaultTitle
+			textColor = ui.ColorDarkGray
+		} else {
+			displayText = m.prTitle
+			textColor = ui.ColorWhite
+		}
+		// Truncate display if too long (use rune count for proper Unicode width)
+		innerWidth := 40
+		maxLen := innerWidth - 1 // leave room for cursor
+		displayRunes := utf8.RuneCountInString(displayText)
+		if displayRunes > maxLen {
+			// Truncate by runes, not bytes
+			runes := []rune(displayText)
+			displayText = string(runes[:maxLen])
+			displayRunes = maxLen
+		}
+		textStyle := lipgloss.NewStyle().Foreground(textColor)
+		padding := innerWidth - displayRunes - 1 // -1 for cursor
+
+		leftLines = append(leftLines, borderStyle.Render("  ┌"+strings.Repeat("─", innerWidth)+"┐"))
+		leftLines = append(leftLines, borderStyle.Render("  │")+textStyle.Render(displayText)+cursorStyle.Render("█")+strings.Repeat(" ", padding)+borderStyle.Render("│"))
+		leftLines = append(leftLines, borderStyle.Render("  └"+strings.Repeat("─", innerWidth)+"┘"))
+		leftLines = append(leftLines, "")
+	}
+
+	// Tickets section
+	ticketTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorWhite)
+	leftLines = append(leftLines, ticketTitleStyle.Render(fmt.Sprintf(" Tickets (%d) ", len(m.tickets))))
+	leftLines = append(leftLines, "")
+
+	if len(m.tickets) == 0 {
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		leftLines = append(leftLines, dimStyle.Render("  No tickets found"))
+	} else {
+		ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+		for _, ticket := range m.tickets {
+			leftLines = append(leftLines, fmt.Sprintf("  🎫 %s", ticketStyle.Render(ticket)))
+		}
+	}
+
+	leftLines = append(leftLines, "")
+	if len(m.commits) > 0 {
+		hintStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		enterStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+		leftLines = append(leftLines, hintStyle.Render("  Type to edit title"))
+		leftLines = append(leftLines, hintStyle.Render("  Press ")+enterStyle.Render("Enter")+hintStyle.Render(" to create PR"))
+	} else {
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		leftLines = append(leftLines, dimStyle.Render("  Nothing to merge"))
+	}
+
+	leftTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorCyan)
+	leftContent := leftTitleStyle.Render(" 🚀 Create PR ") + "\n" + strings.Join(leftLines, "\n")
+
+	// Build RIGHT column (commits list)
 	var commitLines []string
 	commitLines = append(commitLines, "")
+
+	// Max message length per line (account for indent)
+	maxMsgLen := columnWidth - 14
 
 	if len(m.commits) == 0 {
 		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
 		commitLines = append(commitLines, dimStyle.Render("  No commits to merge"))
 	} else {
-		for i, commit := range m.commits {
-			arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
-			arrow := "  "
-			if i == m.menuIndex {
-				arrow = "▶ "
-			}
+		ticketRegex := regexp.MustCompile(`(ATT-\d+)`)
 
+		for _, commit := range m.commits {
 			hashStyle := lipgloss.NewStyle().Foreground(ui.ColorMagenta)
-			msgStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
 
-			ticketStr := ""
-			if len(commit.Tickets) > 0 {
-				ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
-				ticketStr = " " + ticketStyle.Render("["+strings.Join(commit.Tickets, ", ")+"]")
+			// Format: hash on line 1
+			commitLines = append(commitLines,
+				fmt.Sprintf("  %s", hashStyle.Render(commit.Hash)),
+			)
+
+			// Highlight tickets in yellow within the message
+			msg := commit.Message
+			styledMsg := ticketRegex.ReplaceAllStringFunc(msg, func(match string) string {
+				return ticketStyle.Render(match)
+			})
+
+			// Wrap message to fit column, with indent
+			indent := "    "
+			words := strings.Fields(styledMsg)
+			var line string
+			for _, word := range words {
+				testLine := line + " " + word
+				if len(strings.TrimSpace(testLine)) > maxMsgLen && line != "" {
+					commitLines = append(commitLines, indent+strings.TrimSpace(line))
+					line = word
+				} else {
+					line = testLine
+				}
+			}
+			if strings.TrimSpace(line) != "" {
+				commitLines = append(commitLines, indent+strings.TrimSpace(line))
 			}
 
-			commitLines = append(commitLines, fmt.Sprintf("  %s%s %s%s",
-				arrowStyle.Render(arrow),
-				hashStyle.Render(commit.Hash),
-				msgStyle.Render(commit.Message),
-				ticketStr,
-			))
+			commitLines = append(commitLines, "") // spacing between commits
 		}
 	}
 
 	commitTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorCyan)
 	commitContent := commitTitleStyle.Render(fmt.Sprintf(" %d commits ", len(m.commits))) + "\n" + strings.Join(commitLines, "\n")
 
-	// Build right column (PR info + tickets)
-	var rightLines []string
-
-	infoTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorWhite)
-	rightLines = append(rightLines, infoTitleStyle.Render(" PR Info "))
-	rightLines = append(rightLines, "")
-
-	if m.repoInfo != nil {
-		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-		valueStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true)
-		rightLines = append(rightLines, labelStyle.Render("  Repo: ")+valueStyle.Render(m.repoInfo.DisplayName))
-	}
-
-	if m.prType != nil {
-		mainBranch := "main"
-		if m.repoInfo != nil {
-			mainBranch = m.repoInfo.MainBranch
-		}
-		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-		typeStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
-		rightLines = append(rightLines, labelStyle.Render("  Type: ")+typeStyle.Render(m.prType.Display(mainBranch)))
-	}
-
-	rightLines = append(rightLines, "")
-
-	// Tickets section
-	ticketTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorYellow)
-	rightLines = append(rightLines, ticketTitleStyle.Render(fmt.Sprintf(" Tickets (%d) ", len(m.tickets))))
-	rightLines = append(rightLines, "")
-
-	if len(m.tickets) == 0 {
-		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
-		rightLines = append(rightLines, dimStyle.Render("  No tickets found"))
-	} else {
-		for _, ticket := range m.tickets {
-			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
-			rightLines = append(rightLines, fmt.Sprintf("  🎫 %s", ticketStyle.Render(ticket)))
-		}
-	}
-
-	rightLines = append(rightLines, "")
-	if len(m.commits) > 0 {
-		continueStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
-		enterStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
-		rightLines = append(rightLines, continueStyle.Render("  Press ")+enterStyle.Render("Enter")+" to continue")
-	} else {
-		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
-		rightLines = append(rightLines, dimStyle.Render("  Nothing to merge"))
-	}
-
-	rightContent := strings.Join(rightLines, "\n")
-
-	// Use ColumnBox for consistent sizing
-	leftColumn := ui.ColumnBox(commitContent, "", ui.ColorCyan, true, columnWidth, panelHeight)
-	rightColumn := ui.ColumnBox(rightContent, "", ui.ColorWhite, false, columnWidth-10, panelHeight)
+	// Use ColumnBox for consistent sizing - purple outer borders for consistency
+	leftColumn := ui.ColumnBox(leftContent, "", ui.ColorPurple, true, columnWidth, panelHeight)
+	rightColumn := ui.ColumnBox(commitContent, "", ui.ColorPurple, false, columnWidth-10, panelHeight)
 
 	return ui.TwoColumns(leftColumn, rightColumn, 2)
 }
@@ -500,7 +564,8 @@ func (m Model) renderConfirmation() string {
 		for _, ticket := range m.tickets {
 			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
 			urlStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
-			leftLines = append(leftLines, fmt.Sprintf("  - %s%s", ticketStyle.Render(fmt.Sprintf("[%s]", ticket)), urlStyle.Render("(linear.app/...)")))
+			linearURL := fmt.Sprintf("https://linear.app/attuned/issue/%s", ticket)
+			leftLines = append(leftLines, fmt.Sprintf("  - %s%s", ticketStyle.Render(fmt.Sprintf("[%s]", ticket)), urlStyle.Render(fmt.Sprintf("(%s)", linearURL))))
 		}
 	}
 
@@ -516,8 +581,39 @@ func (m Model) renderConfirmation() string {
 	leftTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorCyan)
 	leftContent := leftTitleStyle.Render(" 🚀 Create PR ") + "\n" + strings.Join(leftLines, "\n")
 
-	// Build right column (stats)
+	// Build right column (summary)
 	var rightLines []string
+	rightLines = append(rightLines, "")
+
+	// Branch flow
+	if m.prType != nil {
+		headBranch := m.prType.HeadBranch()
+		baseBranch := m.prType.BaseBranch(mainBranch)
+		headStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(headBranch)).Bold(true)
+		baseStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(baseBranch)).Bold(true)
+		arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+		rightLines = append(rightLines, fmt.Sprintf("  %s %s %s", headStyle.Render(headBranch), arrowStyle.Render("→"), baseStyle.Render(baseBranch)))
+		rightLines = append(rightLines, "")
+	}
+
+	// Repo
+	if m.repoInfo != nil {
+		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		valueStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true)
+		rightLines = append(rightLines, fmt.Sprintf("  %s %s", labelStyle.Render("Repo:"), valueStyle.Render(m.repoInfo.DisplayName)))
+	}
+
+	// Title preview
+	if m.prTitle != "" {
+		labelStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		titleStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+		title := m.prTitle
+		if len(title) > 25 {
+			title = title[:22] + "..."
+		}
+		rightLines = append(rightLines, fmt.Sprintf("  %s %s", labelStyle.Render("Title:"), titleStyle.Render(title)))
+	}
+
 	rightLines = append(rightLines, "")
 	rightLines = append(rightLines, ui.SectionHeader("STATS", ui.ColorMagenta))
 	rightLines = append(rightLines, "")
@@ -526,6 +622,15 @@ func (m Model) renderConfirmation() string {
 	ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
 	rightLines = append(rightLines, fmt.Sprintf("  📊 %s commits", commitStyle.Render(fmt.Sprintf("%d", len(m.commits)))))
 	rightLines = append(rightLines, fmt.Sprintf("  🎫 %s tickets", ticketStyle.Render(fmt.Sprintf("%d", len(m.tickets)))))
+
+	// List tickets
+	if len(m.tickets) > 0 {
+		rightLines = append(rightLines, "")
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		for _, ticket := range m.tickets {
+			rightLines = append(rightLines, fmt.Sprintf("     %s %s", dimStyle.Render("•"), ticketStyle.Render(ticket)))
+		}
+	}
 
 	if m.dryRun {
 		rightLines = append(rightLines, "")
@@ -1357,8 +1462,8 @@ func (m Model) renderStatusBar() string {
 	case ScreenCommitReview:
 		if len(m.commits) > 0 {
 			hints = []string{
-				ui.KeyBinding("↑↓", "Scroll", ui.ColorWhite),
-				ui.KeyBinding("Enter", "Continue", ui.ColorGreen),
+				ui.KeyBinding("Type", "Edit title", ui.ColorYellow),
+				ui.KeyBinding("Enter", "Create PR", ui.ColorGreen),
 				ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 			}
 		} else {
@@ -1468,3 +1573,4 @@ func ptrEqual(a, b *string) bool {
 	}
 	return *a == *b
 }
+

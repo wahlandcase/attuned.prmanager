@@ -207,38 +207,46 @@ func (m Model) selectPrType() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q":
-		m.shouldQuit = true
-		return m, tea.Quit
-	case "up", "k":
-		if m.menuIndex > 0 {
-			m.menuIndex--
-		}
-	case "down", "j":
-		if m.menuIndex < len(m.commits)-1 {
-			m.menuIndex++
-		}
-	case "enter":
+	switch msg.Type {
+	case tea.KeyEnter:
 		// Don't allow continuing if there are no commits
 		if len(m.commits) == 0 {
 			return m, nil
 		}
-		// Set default title and go to title input
-		if m.prType != nil {
+		// Use default title if none entered
+		if m.prTitle == "" && m.prType != nil {
 			mainBranch := "main"
 			if m.repoInfo != nil {
 				mainBranch = m.repoInfo.MainBranch
 			}
 			m.prTitle = m.prType.DefaultTitle(mainBranch)
 		}
-		m.screen = ScreenTitleInput
-	case "esc":
+		// Go directly to confirmation (skip title input screen)
+		if m.mode != nil && *m.mode == ModeBatch {
+			m.screen = ScreenBatchConfirmation
+		} else {
+			m.screen = ScreenConfirmation
+		}
+		m.confirmSelection = 0
+	case tea.KeyEsc:
 		m.screen = ScreenPrTypeSelect
 		m.prType = nil
+		m.prTitle = ""
 		m.commits = nil
 		m.tickets = nil
 		m.menuIndex = 0
+	case tea.KeyBackspace:
+		if len(m.prTitle) > 0 {
+			m.prTitle = m.prTitle[:len(m.prTitle)-1]
+		}
+	case tea.KeyRunes:
+		key := string(msg.Runes)
+		if key == "q" && m.prTitle == "" {
+			// Only quit if no title entered (so 'q' can be typed in title)
+			m.shouldQuit = true
+			return m, tea.Quit
+		}
+		m.prTitle += key
 	}
 	return m, nil
 }
@@ -340,9 +348,9 @@ func (m Model) confirmAction() (tea.Model, tea.Cmd) {
 func (m Model) goBack() (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case ScreenConfirmation:
-		m.screen = ScreenTitleInput
+		m.screen = ScreenCommitReview
 	case ScreenBatchConfirmation:
-		m.screen = ScreenTitleInput
+		m.screen = ScreenTitleInput // batch mode still uses separate title input
 	case ScreenMergeConfirmation:
 		m.screen = ScreenViewOpenPrs
 	}
