@@ -11,6 +11,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Fixed width for stable layout (prevents UI shifting)
+const fixedContentWidth = 120
+
 // View renders the application
 func (m Model) View() string {
 	if m.shouldQuit {
@@ -36,6 +39,9 @@ func (m Model) View() string {
 	sections = append(sections, ui.RenderBanner(m.dryRun))
 	sections = append(sections, "")
 
+	// Use fixed content width for stable layout
+	contentWidth := fixedContentWidth
+
 	// Screens that manage their own full layout (no outer box)
 	fullLayoutScreens := m.screen == ScreenBatchRepoSelect ||
 		m.screen == ScreenViewOpenPrs ||
@@ -46,15 +52,7 @@ func (m Model) View() string {
 	if fullLayoutScreens {
 		sections = append(sections, m.renderContentWithHeight(availableHeight))
 	} else {
-		// Standard outer box for simpler screens
-		contentWidth := m.width - 4
-		if contentWidth < 80 {
-			contentWidth = 80
-		}
-		if contentWidth > 120 {
-			contentWidth = 120
-		}
-
+		// Standard outer box for simpler screens - always use fixed width
 		outerBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ui.ColorPurple).
@@ -265,14 +263,8 @@ func (m Model) renderLoading() string {
 }
 
 func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
-	// Dynamic column sizing
-	columnWidth := (m.width - 6) / 2
-	if columnWidth < 40 {
-		columnWidth = 40
-	}
-	if columnWidth > 60 {
-		columnWidth = 60
-	}
+	// Fixed column sizing for stable layout
+	columnWidth := (fixedContentWidth - 6) / 2
 	panelHeight := availableHeight - 2
 	if panelHeight < 10 {
 		panelHeight = 10
@@ -693,14 +685,8 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 		}
 	}
 
-	// Column width: half of available width, with bounds
-	columnWidth := (m.width - 6) / 2
-	if columnWidth < 35 {
-		columnWidth = 35
-	}
-	if columnWidth > 50 {
-		columnWidth = 50
-	}
+	// Fixed column width for stable layout
+	columnWidth := (fixedContentWidth - 6) / 2
 
 	// Column height: available height minus filter box (4 lines) and gap (2)
 	columnHeight := availableHeight - 6
@@ -1125,14 +1111,8 @@ func (m Model) renderBatchSummaryWithHeight(availableHeight int) string {
 
 	content := strings.Join(lines, "\n")
 
-	// Wrap in a box with dynamic sizing
-	boxWidth := m.width - 10
-	if boxWidth < 60 {
-		boxWidth = 60
-	}
-	if boxWidth > 100 {
-		boxWidth = 100
-	}
+	// Fixed box width for stable layout
+	boxWidth := fixedContentWidth - 10
 
 	return ui.ColumnBox(content, " Batch Summary ", ui.ColorGreen, true, boxWidth, availableHeight)
 }
@@ -1157,12 +1137,8 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 			dimStyle.Render("All repositories are up to date!"))
 	}
 
-	// Column dimensions - use most of terminal width
-	columnWidth := (m.width - 8) / 2 // Split width evenly with gap
-	if columnWidth < 40 {
-		columnWidth = 40
-	}
-	// No max cap - let columns expand to fill space
+	// Fixed column dimensions for stable layout
+	columnWidth := (fixedContentWidth - 8) / 2
 
 	// Column height for equal sizing
 	columnHeight := availableHeight - 2
@@ -1354,14 +1330,8 @@ func (m Model) renderMergeSummaryWithHeight(availableHeight int) string {
 
 	content := strings.Join(lines, "\n")
 
-	// Wrap in a box with dynamic sizing
-	boxWidth := m.width - 10
-	if boxWidth < 50 {
-		boxWidth = 50
-	}
-	if boxWidth > 80 {
-		boxWidth = 80
-	}
+	// Fixed box width for stable layout
+	boxWidth := fixedContentWidth - 10
 
 	return ui.ColumnBox(content, " Merge Summary ", headerColor, true, boxWidth, availableHeight)
 }
@@ -1462,7 +1432,7 @@ func (m Model) renderStatusBar() string {
 	}
 
 	// Don't render an empty box if there are no hints
-	if len(hints) == 0 {
+	if len(hints) == 0 && m.copyFeedback == "" {
 		return ""
 	}
 
@@ -1471,7 +1441,21 @@ func (m Model) renderStatusBar() string {
 		BorderForeground(ui.ColorDarkGray).
 		Padding(0, 1)
 
-	return borderStyle.Render(strings.Join(hints, "  "))
+	content := strings.Join(hints, "  ")
+
+	// Add copy feedback if present
+	if m.copyFeedback != "" {
+		feedbackStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+		if strings.HasPrefix(m.copyFeedback, "✗") {
+			feedbackStyle = lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
+		}
+		if content != "" {
+			content += "  │  "
+		}
+		content += feedbackStyle.Render(m.copyFeedback)
+	}
+
+	return borderStyle.Render(content)
 }
 
 // ptrEqual compares two string pointers for equality

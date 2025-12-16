@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -532,6 +533,16 @@ func openURL(url string) error {
 	return cmd.Start()
 }
 
+// isWSL checks if running under Windows Subsystem for Linux
+func isWSL() bool {
+	data, err := os.ReadFile("/proc/version")
+	if err != nil {
+		return false
+	}
+	lower := strings.ToLower(string(data))
+	return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl")
+}
+
 // copyToClipboard copies text to the system clipboard
 func copyToClipboard(text string) error {
 	var cmd *exec.Cmd
@@ -541,9 +552,11 @@ func copyToClipboard(text string) error {
 		cmd = exec.Command("pbcopy")
 	case "windows":
 		cmd = exec.Command("clip")
-	default: // Linux - try xclip first, fall back to xsel
-		// Check if xclip is available
-		if _, err := exec.LookPath("xclip"); err == nil {
+	default: // Linux
+		if isWSL() {
+			// WSL: use clip.exe to reach Windows clipboard
+			cmd = exec.Command("clip.exe")
+		} else if _, err := exec.LookPath("xclip"); err == nil {
 			cmd = exec.Command("xclip", "-selection", "clipboard")
 		} else {
 			cmd = exec.Command("xsel", "--clipboard", "--input")

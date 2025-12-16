@@ -71,6 +71,7 @@ type Model struct {
 	errorMessage     string
 	loadingMessage   string
 	spinnerFrame     int
+	copyFeedback     string // Brief "Copied!" message, clears on next action
 
 	// Animation state
 	confetti      []ConfettiParticle

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"attuned-release/internal/models"
@@ -52,6 +53,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard input
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Clear copy feedback on any keypress
+	m.copyFeedback = ""
+
 	// Global quit
 	if msg.Type == tea.KeyCtrlC {
 		m.shouldQuit = true
@@ -357,8 +361,19 @@ func (m Model) handleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		if m.prURL != "" {
-			_ = copyToClipboard(m.prURL)
+			// Format as markdown list item
+			repoName := "PR"
+			if m.repoInfo != nil {
+				repoName = m.repoInfo.DisplayName
+			}
+			formatted := fmt.Sprintf("- %s: %s", repoName, m.prURL)
+			if err := copyToClipboard(formatted); err == nil {
+				m.copyFeedback = "✓ Copied URL!"
+			} else {
+				m.copyFeedback = "✗ Copy failed"
+			}
 		}
+		return m, nil
 	case "enter", "esc":
 		return m.reset()
 	}
@@ -555,14 +570,21 @@ func (m Model) handleBatchSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		openURLs(urls)
 	case "c":
-		// Copy all PR URLs
-		var urls []string
+		// Copy all PR URLs as markdown list
+		var lines []string
 		for _, result := range m.batchResults {
 			if result.PrURL != nil {
-				urls = append(urls, *result.PrURL)
+				lines = append(lines, fmt.Sprintf("- %s: %s", result.Repo.DisplayName, *result.PrURL))
 			}
 		}
-		_ = copyURLs(urls)
+		if len(lines) > 0 {
+			if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
+				m.copyFeedback = "✓ Copied URLs!"
+			} else {
+				m.copyFeedback = "✗ Copy failed"
+			}
+		}
+		return m, nil
 	case "enter", "esc":
 		return m.reset()
 	}
@@ -637,12 +659,19 @@ func (m Model) handleViewOpenPrsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			openURLs(urls)
 		case "c":
-			// Copy all PR URLs
-			var urls []string
+			// Copy all PR URLs as markdown list
+			var lines []string
 			for _, pr := range m.mergePRs {
-				urls = append(urls, pr.URL)
+				lines = append(lines, fmt.Sprintf("- %s: %s", pr.Repo.DisplayName, pr.URL))
 			}
-			_ = copyURLs(urls)
+			if len(lines) > 0 {
+				if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
+					m.copyFeedback = "✓ Copied URLs!"
+				} else {
+					m.copyFeedback = "✗ Copy failed"
+				}
+			}
+			return m, nil
 		}
 	}
 	return m, nil
@@ -767,19 +796,26 @@ func (m Model) handleMergeSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		openURLs(urls)
 	case "c":
-		// Copy URLs for successfully merged PRs
-		var urls []string
+		// Copy URLs for successfully merged PRs as markdown list
+		var lines []string
 		for _, result := range m.mergeResults {
 			if result.Success {
 				for _, pr := range m.mergePRs {
 					if pr.Repo.DisplayName == result.RepoName && pr.PrNumber == result.PrNumber {
-						urls = append(urls, pr.URL)
+						lines = append(lines, fmt.Sprintf("- %s: %s", pr.Repo.DisplayName, pr.URL))
 						break
 					}
 				}
 			}
 		}
-		_ = copyURLs(urls)
+		if len(lines) > 0 {
+			if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
+				m.copyFeedback = "✓ Copied URLs!"
+			} else {
+				m.copyFeedback = "✗ Copy failed"
+			}
+		}
+		return m, nil
 	case "enter", "esc":
 		return m.reset()
 	}
