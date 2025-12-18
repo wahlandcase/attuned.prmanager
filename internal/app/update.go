@@ -9,6 +9,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// cancelBatchFetch cancels background fetches (channel is closed by sender goroutine)
+func (m *Model) cancelBatchFetch() {
+	if m.batchFetchCancel != nil {
+		m.batchFetchCancel()
+		m.batchFetchCancel = nil
+	}
+	m.batchResultsChan = nil
+}
+
 // Update handles all messages and updates state
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -29,6 +38,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchCommitsResult:
 		return m.handleFetchCommitsResult(msg)
 
+	case batchCommitsResult:
+		return m.handleBatchCommitsResult(msg)
+
 	case prCreatedResult:
 		return m.handlePrCreatedResult(msg)
 
@@ -43,6 +55,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case batchReposLoadedResult:
 		return m.handleBatchReposLoaded(msg)
+
+	case batchRepoCommitResult:
+		return m.handleBatchRepoCommitResult(msg)
 
 	case currentRepoLoadedResult:
 		return m.handleCurrentRepoLoaded(msg)
@@ -141,8 +156,8 @@ func (m Model) selectMainMenuItem() (tea.Model, tea.Cmd) {
 	case 2: // View Open PRs
 		mode := ModeBatch
 		m.mode = &mode
-		m.screen = ScreenViewOpenPrs
-		m.openPRsLoading = true
+		m.screen = ScreenLoading
+		m.loadingMessage = "Fetching open PRs..."
 		return m, fetchOpenPRsCmd(m.config, m.dryRun)
 	case 3: // Quit
 		m.shouldQuit = true
@@ -194,10 +209,12 @@ func (m Model) selectPrType() (tea.Model, tea.Cmd) {
 	m.prType = &prType
 
 	if m.mode != nil && *m.mode == ModeBatch {
-		// Batch mode - load repos
+		// Batch mode - load repos, then fetch commits in background
 		m.screen = ScreenLoading
 		m.loadingMessage = "Scanning repositories..."
-		return m, loadBatchReposCmd(m.config)
+		// Create channel for background fetch results
+		m.batchResultsChan = make(chan batchRepoCommitResult, 50)
+		return m, loadBatchReposCmd(m.config, m.prType, m.dryRun, m.batchResultsChan)
 	} else {
 		// Single mode - start fetching commits
 		m.screen = ScreenLoading
@@ -313,6 +330,10 @@ func (m Model) confirmAction() (tea.Model, tea.Cmd) {
 		m.screen = ScreenCreating
 		return m, createPRCmd(m.repoInfo, m.prType, m.prTitle, m.tickets, m.dryRun)
 	case ScreenBatchConfirmation:
+		// Block if no repos have commits
+		if m.batchReposWithCommits == 0 {
+			return m, nil
+		}
 		// Count selected repos
 		m.batchTotal = 0
 		for _, selected := range m.batchSelected {
@@ -447,8 +468,28 @@ func (m Model) handleBatchRepoSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.prType != nil {
 			m.prTitle = m.prType.DefaultTitle("main")
 		}
-		m.screen = ScreenTitleInput
+		// Check if any selected repos are still loading
+		loadingCount := 0
+		for i, selected := range m.batchSelected {
+			if selected && i < len(m.batchRepoCommits) && m.batchRepoCommits[i] == nil {
+				loadingCount++
+			}
+		}
+		if loadingCount > 0 {
+			// Wait for selected repos to finish - show loading but keep listening
+			m.screen = ScreenLoading
+			m.loadingMessage = fmt.Sprintf("Waiting for %d repo(s) to finish...", loadingCount)
+			return m, listenForBatchCommits(m.batchResultsChan)
+		}
+		// All selected repos done - cancel remaining fetches and proceed
+		m.cancelBatchFetch()
+		// Go to loading screen to check for existing PRs (commits already cached)
+		m.screen = ScreenLoading
+		m.loadingMessage = "Checking for existing PRs..."
+		return m, fetchBatchCommitsCmd(m.batchRepos, m.batchSelected, m.batchRepoCommits, m.prType, m.dryRun)
 	case tea.KeyEsc:
+		// Cancel background fetches and close channel
+		m.cancelBatchFetch()
 		m.screen = ScreenPrTypeSelect
 		m.prType = nil
 		m.menuIndex = 0
@@ -629,6 +670,18 @@ func (m Model) handleViewOpenPrsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeySpace:
 		m.toggleMergeSelection()
+	case tea.KeyTab, tea.KeyEnter:
+		// Proceed to merge confirmation if any selected
+		count := 0
+		for _, selected := range m.mergeSelected {
+			if selected {
+				count++
+			}
+		}
+		if count > 0 {
+			m.screen = ScreenMergeConfirmation
+			m.confirmSelection = 0
+		}
 	case tea.KeyEsc:
 		m.openPRs = nil
 		m.mergePRs = nil
@@ -645,19 +698,9 @@ func (m Model) handleViewOpenPrsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "a":
 			m.selectAllInColumn()
-		case "m":
-			count := 0
-			for _, selected := range m.mergeSelected {
-				if selected {
-					count++
-				}
-			}
-			if count > 0 {
-				m.screen = ScreenMergeConfirmation
-				m.confirmSelection = 0
-			}
 		case "r":
-			m.openPRsLoading = true
+			m.screen = ScreenLoading
+			m.loadingMessage = "Fetching open PRs..."
 			return m, fetchOpenPRsCmd(m.config, m.dryRun)
 		case "o":
 			// Open all PR URLs
@@ -831,6 +874,8 @@ func (m Model) handleMergeSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) reset() (tea.Model, tea.Cmd) {
+	// Cancel any background fetches and close channel
+	m.cancelBatchFetch()
 	m.screen = ScreenMainMenu
 	m.menuIndex = 0
 	m.mode = nil
@@ -841,6 +886,9 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	m.prTitle = ""
 	m.prURL = ""
 	m.batchRepos = nil
+	m.batchRepoCommits = nil
+	m.batchResultsChan = nil
+	m.batchFetchPending = 0
 	m.batchSelected = nil
 	m.batchResults = nil
 	m.batchFilter = ""

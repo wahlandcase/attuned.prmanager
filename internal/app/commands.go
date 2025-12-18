@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"runtime"
@@ -19,9 +20,10 @@ import (
 // Message types for async operations
 
 type fetchCommitsResult struct {
-	commits []models.CommitInfo
-	tickets []string
-	err     error
+	commits    []models.CommitInfo
+	tickets    []string
+	existingPR *models.GhPr
+	err        error
 }
 
 type prCreatedResult struct {
@@ -40,6 +42,13 @@ type openPRsFetchedResult struct {
 
 type mergeCompleteResult struct {
 	result models.MergeResult
+}
+
+type batchCommitsResult struct {
+	tickets          []string
+	existingPRs      int // Count of repos with existing PRs
+	reposWithCommits int // Count of repos that have commits to merge
+	err              error
 }
 
 // Commands
@@ -81,7 +90,105 @@ func fetchCommitsCmd(repo *models.RepoInfo, prType *models.PrType, dryRun bool) 
 		// Extract all unique tickets
 		tickets := git.GetAllTickets(commits)
 
-		return fetchCommitsResult{commits: commits, tickets: tickets}
+		// Check for existing PR
+		existingPR, _ := github.GetExistingPR(repo.Path, headBranch, baseBranch)
+
+		return fetchCommitsResult{commits: commits, tickets: tickets, existingPR: existingPR}
+	}
+}
+
+func fetchBatchCommitsCmd(repos []models.RepoInfo, selected []bool, cachedCommits []*[]models.CommitInfo, prType *models.PrType, dryRun bool) tea.Cmd {
+	return func() tea.Msg {
+		if dryRun {
+			time.Sleep(300 * time.Millisecond)
+			// Count selected repos for dry run
+			selectedCount := 0
+			for i := range repos {
+				if i < len(selected) && selected[i] {
+					selectedCount++
+				}
+			}
+			return batchCommitsResult{tickets: []string{"ATT-1234", "ATT-1235", "ATT-1236"}, existingPRs: 1, reposWithCommits: selectedCount}
+		}
+
+		if prType == nil {
+			return batchCommitsResult{err: nil}
+		}
+
+		// Collect selected repos with their cached commits
+		type selectedRepo struct {
+			repo    models.RepoInfo
+			commits []models.CommitInfo
+		}
+		var selectedRepos []selectedRepo
+		for i, repo := range repos {
+			if i < len(selected) && selected[i] {
+				var commits []models.CommitInfo
+				if i < len(cachedCommits) && cachedCommits[i] != nil {
+					commits = *cachedCommits[i]
+				}
+				selectedRepos = append(selectedRepos, selectedRepo{repo: repo, commits: commits})
+			}
+		}
+
+		if len(selectedRepos) == 0 {
+			return batchCommitsResult{tickets: nil}
+		}
+
+		// Only check for existing PRs in parallel (commits already cached)
+		type repoResult struct {
+			hasExisting bool
+		}
+		results := make(chan repoResult, len(selectedRepos))
+
+		var wg sync.WaitGroup
+		for _, sr := range selectedRepos {
+			wg.Add(1)
+			go func(r models.RepoInfo) {
+				defer wg.Done()
+
+				headBranch := prType.HeadBranch()
+				baseBranch := prType.BaseBranch(r.MainBranch)
+
+				// Check for existing PR (no need to re-fetch commits)
+				existingPR, _ := github.GetExistingPR(r.Path, headBranch, baseBranch)
+
+				results <- repoResult{hasExisting: existingPR != nil}
+			}(sr.repo)
+		}
+
+		// Close channel when done
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		// Aggregate tickets from cached commits and count existing PRs
+		ticketSet := make(map[string]bool)
+		withCommitsCount := 0
+		for _, sr := range selectedRepos {
+			tickets := git.GetAllTickets(sr.commits)
+			for _, t := range tickets {
+				ticketSet[t] = true
+			}
+			if len(sr.commits) > 0 {
+				withCommitsCount++
+			}
+		}
+
+		existingCount := 0
+		for res := range results {
+			if res.hasExisting {
+				existingCount++
+			}
+		}
+
+		var allTickets []string
+		for t := range ticketSet {
+			allTickets = append(allTickets, t)
+		}
+
+		return batchCommitsResult{tickets: allTickets, existingPRs: existingCount, reposWithCommits: withCommitsCount}
 	}
 }
 
@@ -337,8 +444,15 @@ func startMergingCmd(m *Model, prIndex int) tea.Cmd {
 
 // Message types for repo loading
 type batchReposLoadedResult struct {
-	repos []models.RepoInfo
-	err   error
+	repos      []models.RepoInfo
+	cancelFunc func() // Cancel function for background fetch
+	err        error
+}
+
+// Single repo commit fetch result (sent incrementally from background)
+type batchRepoCommitResult struct {
+	index   int
+	commits []models.CommitInfo
 }
 
 type currentRepoLoadedResult struct {
@@ -346,14 +460,82 @@ type currentRepoLoadedResult struct {
 	err  error
 }
 
-// loadBatchReposCmd loads all repos for batch mode
-func loadBatchReposCmd(cfg *config.Config) tea.Cmd {
+// loadBatchReposCmd loads repos and starts background commit fetching
+func loadBatchReposCmd(cfg *config.Config, prType *models.PrType, dryRun bool, resultsChan chan batchRepoCommitResult) tea.Cmd {
 	return func() tea.Msg {
 		repos, err := git.FindAttunedRepos(cfg.AttunedPath())
 		if err != nil {
 			return batchReposLoadedResult{err: err}
 		}
-		return batchReposLoadedResult{repos: repos}
+
+		if len(repos) == 0 {
+			return batchReposLoadedResult{repos: repos}
+		}
+
+		// Create cancellation context
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Start background fetches for all repos
+		go func() {
+			defer close(resultsChan) // Close channel when all workers done or cancelled
+
+			var wg sync.WaitGroup
+			for i, repo := range repos {
+				wg.Add(1)
+				go func(idx int, r models.RepoInfo) {
+					defer wg.Done()
+
+					// Check for cancellation
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+
+					var commits []models.CommitInfo
+
+					if dryRun {
+						// Simulate network delay
+						time.Sleep(time.Duration(100+idx*50) * time.Millisecond)
+						if idx%3 != 0 {
+							commits = []models.CommitInfo{
+								{Hash: "abc1234", Message: "feat: Add new feature", Tickets: []string{"ATT-1234"}},
+								{Hash: "def5678", Message: "fix: Bug fix", Tickets: []string{"ATT-1235"}},
+							}
+						}
+					} else if prType != nil {
+						headBranch := prType.HeadBranch()
+						baseBranch := prType.BaseBranch(r.MainBranch)
+
+						// Fetch from remote (network call)
+						if err := git.FetchBranches(r.Path, []string{headBranch, baseBranch}); err == nil {
+							commits, _ = git.GetCommitsBetween(r.Path, baseBranch, headBranch)
+						}
+					}
+
+					// Send result (check cancellation again)
+					select {
+					case <-ctx.Done():
+						return
+					case resultsChan <- batchRepoCommitResult{index: idx, commits: commits}:
+					}
+				}(i, repo)
+			}
+			wg.Wait()
+		}()
+
+		return batchReposLoadedResult{repos: repos, cancelFunc: cancel}
+	}
+}
+
+// listenForBatchCommits creates a command that listens for commit results
+func listenForBatchCommits(resultsChan chan batchRepoCommitResult) tea.Cmd {
+	return func() tea.Msg {
+		result, ok := <-resultsChan
+		if !ok {
+			return nil // Channel closed
+		}
+		return result
 	}
 }
 
@@ -378,11 +560,55 @@ func (m Model) handleBatchReposLoaded(msg batchReposLoadedResult) (tea.Model, te
 	}
 
 	m.batchRepos = msg.repos
+	m.batchRepoCommits = make([]*[]models.CommitInfo, len(msg.repos)) // All nil = loading
 	m.batchSelected = make([]bool, len(msg.repos))
+	m.batchFetchCancel = msg.cancelFunc
+	m.batchFetchPending = len(msg.repos)
 	m.screen = ScreenBatchRepoSelect
 	m.batchColumn = 0
 	m.batchFEIndex = 0
 	m.batchBEIndex = 0
+
+	// Start listening for commit results
+	if len(msg.repos) > 0 && m.batchResultsChan != nil {
+		return m, listenForBatchCommits(m.batchResultsChan)
+	}
+	return m, nil
+}
+
+func (m Model) handleBatchRepoCommitResult(msg batchRepoCommitResult) (tea.Model, tea.Cmd) {
+	// Update commits for this repo
+	if msg.index >= 0 && msg.index < len(m.batchRepoCommits) {
+		commits := msg.commits // Make a copy to get a stable pointer
+		m.batchRepoCommits[msg.index] = &commits
+	}
+
+	m.batchFetchPending--
+
+	// If we're waiting for selected repos to finish (Loading screen)
+	if m.screen == ScreenLoading && m.batchResultsChan != nil {
+		// Check if all selected repos are now done
+		allDone := true
+		for i, selected := range m.batchSelected {
+			if selected && i < len(m.batchRepoCommits) && m.batchRepoCommits[i] == nil {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			// All selected repos done - cancel remaining and proceed
+			m.cancelBatchFetch()
+			m.loadingMessage = "Checking for existing PRs..."
+			return m, fetchBatchCommitsCmd(m.batchRepos, m.batchSelected, m.batchRepoCommits, m.prType, m.dryRun)
+		}
+		// Still waiting - keep listening
+		return m, listenForBatchCommits(m.batchResultsChan)
+	}
+
+	// Keep listening if more results pending and still on batch select screen
+	if m.batchFetchPending > 0 && m.screen == ScreenBatchRepoSelect && m.batchResultsChan != nil {
+		return m, listenForBatchCommits(m.batchResultsChan)
+	}
 	return m, nil
 }
 
@@ -408,8 +634,23 @@ func (m Model) handleFetchCommitsResult(msg fetchCommitsResult) (tea.Model, tea.
 
 	m.commits = msg.commits
 	m.tickets = msg.tickets
+	m.existingPR = msg.existingPR
 	m.screen = ScreenCommitReview
 	m.menuIndex = 0
+	return m, nil
+}
+
+func (m Model) handleBatchCommitsResult(msg batchCommitsResult) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.errorMessage = msg.err.Error()
+		m.screen = ScreenError
+		return m, nil
+	}
+
+	m.tickets = msg.tickets
+	m.batchExistingPRs = msg.existingPRs
+	m.batchReposWithCommits = msg.reposWithCommits
+	m.screen = ScreenTitleInput
 	return m, nil
 }
 
@@ -452,14 +693,13 @@ func (m Model) handleBatchRepoResult(msg batchRepoResult) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleOpenPRsFetchedResult(msg openPRsFetchedResult) (tea.Model, tea.Cmd) {
-	m.openPRsLoading = false
-
 	if msg.err != nil {
 		m.errorMessage = msg.err.Error()
 		m.screen = ScreenError
 		return m, nil
 	}
 
+	m.screen = ScreenViewOpenPrs
 	m.openPRs = msg.entries
 
 	// Build merge PR list

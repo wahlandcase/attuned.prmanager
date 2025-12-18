@@ -135,13 +135,13 @@ func GeneratePRBody(tickets []string) string {
 		return ""
 	}
 
-	var ticketLinks []string
+	var lines []string
 	for _, t := range tickets {
-		link := fmt.Sprintf("- [%s](https://linear.app/attuned/issue/%s)", t, strings.ToLower(t))
-		ticketLinks = append(ticketLinks, link)
+		line := fmt.Sprintf("### - Closes [%s](https://linear.app/attuned/issue/%s)", t, strings.ToLower(t))
+		lines = append(lines, line)
 	}
 
-	return fmt.Sprintf("Resolves Tickets\n_______________\n%s", strings.Join(ticketLinks, "\n"))
+	return fmt.Sprintf("# Tickets\n\n%s", strings.Join(lines, "\n"))
 }
 
 // MergePR merges a PR using regular merge (not squash)

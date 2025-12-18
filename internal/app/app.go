@@ -36,28 +36,34 @@ type Model struct {
 	mode *AppMode
 
 	// Single mode state
-	repoInfo *models.RepoInfo
-	prType   *models.PrType
-	commits  []models.CommitInfo
-	tickets  []string
-	prTitle  string
-	prURL    string
+	repoInfo   *models.RepoInfo
+	prType     *models.PrType
+	commits    []models.CommitInfo
+	tickets    []string
+	prTitle    string
+	prURL      string
+	existingPR *models.GhPr // Non-nil if PR already exists (will update)
 
 	// Batch mode state
-	batchRepos    []models.RepoInfo
-	batchSelected []bool
-	batchResults  []models.BatchResult
-	batchCurrent  int
-	batchTotal    int
-	batchFilter   string
-	batchColumn   int // 0=Frontend, 1=Backend
-	batchFEIndex  int
-	batchBEIndex  int
+	batchRepos            []models.RepoInfo
+	batchRepoCommits      []*[]models.CommitInfo     // Commits per repo: nil=loading, empty=no commits, non-empty=has commits
+	batchFetchCancel      func()                     // Cancel function for background fetch
+	batchResultsChan      chan batchRepoCommitResult // Channel for background fetch results
+	batchFetchPending     int                        // Number of repos still fetching
+	batchSelected         []bool
+	batchResults          []models.BatchResult
+	batchCurrent          int
+	batchTotal            int
+	batchFilter           string
+	batchColumn           int // 0=Frontend, 1=Backend
+	batchFEIndex          int
+	batchBEIndex          int
+	batchExistingPRs      int // Count of repos with existing PRs (will update)
+	batchReposWithCommits int // Count of repos that have commits to merge
 
 	// Open PRs / Merge state
-	openPRs        []OpenPREntry
-	openPRsLoading bool
-	mergePRs       []models.MergePrEntry
+	openPRs       []OpenPREntry
+	mergePRs      []models.MergePrEntry
 	mergeSelected  []bool
 	mergeColumn    int // 0=dev->staging, 1=staging->main
 	mergeDevIndex  int

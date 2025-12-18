@@ -435,45 +435,70 @@ func RepoListItem(name string, selected bool, highlighted bool, color lipgloss.C
 	)
 }
 
-// PRListItem renders a PR item for the open PRs view
+// RepoListItemWithCommits renders a repo item with checkbox and commit indicator
+// commitCount: -1 = loading, 0 = no commits, >0 = has commits
+func RepoListItemWithCommits(name string, selected bool, highlighted bool, color lipgloss.Color, indent string, commitCount int, spinnerFrame int) string {
+	checkbox := Checkbox(selected)
+	arrow := Arrow(highlighted)
+
+	var style lipgloss.Style
+	if highlighted {
+		style = lipgloss.NewStyle().Foreground(color).Bold(true)
+	} else if selected {
+		style = lipgloss.NewStyle().Foreground(color)
+	} else {
+		style = lipgloss.NewStyle().Foreground(ColorWhite)
+	}
+
+	indentStyle := lipgloss.NewStyle().Foreground(ColorDarkGray)
+	checkStyle := lipgloss.NewStyle().Foreground(color)
+
+	// Show indicator based on state
+	var indicator string
+	if commitCount < 0 {
+		// Loading - show spinner
+		spinner := string(SpinnerFrames[spinnerFrame%len(SpinnerFrames)])
+		indicator = lipgloss.NewStyle().Foreground(ColorYellow).Render(" " + spinner)
+	} else if commitCount > 0 {
+		// Has commits - green dot
+		indicator = lipgloss.NewStyle().Foreground(ColorGreen).Render(" ●")
+	} else {
+		// No commits - dim dot
+		indicator = lipgloss.NewStyle().Foreground(ColorDarkGray).Render(" ○")
+	}
+
+	return fmt.Sprintf("%s%s%s %s%s",
+		style.Render(arrow),
+		indentStyle.Render(indent),
+		checkStyle.Render(checkbox),
+		name,
+		indicator,
+	)
+}
+
+// PRListItem renders a compact single-line PR item for the merge view
 func PRListItem(repoName string, prNumber uint64, headBranch string, baseBranch string, prURL string, selected bool, highlighted bool, color lipgloss.Color) string {
 	checkbox := Checkbox(selected)
-	cursor := " "
-	if highlighted {
-		cursor = ">"
-	}
+	arrow := Arrow(highlighted)
 
-	var checkStyle lipgloss.Style
+	var style lipgloss.Style
 	if highlighted {
-		checkStyle = lipgloss.NewStyle().Foreground(color).Bold(true)
+		style = lipgloss.NewStyle().Foreground(color).Bold(true)
 	} else if selected {
-		checkStyle = lipgloss.NewStyle().Foreground(color)
+		style = lipgloss.NewStyle().Foreground(color)
 	} else {
-		checkStyle = lipgloss.NewStyle().Foreground(ColorWhite)
+		style = lipgloss.NewStyle().Foreground(ColorWhite)
 	}
 
-	nameStyle := lipgloss.NewStyle().Bold(true)
-	urlStyle := lipgloss.NewStyle().Foreground(ColorCyan)
+	checkStyle := lipgloss.NewStyle().Foreground(color)
+	prNumStyle := lipgloss.NewStyle().Foreground(ColorDarkGray)
 
-	// Colored branch flow
-	headColor := BranchColor(headBranch)
-	baseColor := BranchColor(baseBranch)
-	headStyle := lipgloss.NewStyle().Foreground(headColor).Bold(true)
-	baseStyle := lipgloss.NewStyle().Foreground(baseColor).Bold(true)
-	arrowStyle := lipgloss.NewStyle().Foreground(ColorWhite)
-
-	branchFlow := headStyle.Render(headBranch) + arrowStyle.Render(" → ") + baseStyle.Render(baseBranch)
-
-	line1 := fmt.Sprintf("  %s %s %s  #%d",
-		checkStyle.Render(cursor),
+	return fmt.Sprintf("%s%s %s %s",
+		style.Render(arrow),
 		checkStyle.Render(checkbox),
-		nameStyle.Render(repoName),
-		prNumber,
+		repoName,
+		prNumStyle.Render(fmt.Sprintf("#%d", prNumber)),
 	)
-	line2 := fmt.Sprintf("        %s", branchFlow)
-	line3 := fmt.Sprintf("        %s", urlStyle.Render(prURL))
-
-	return line1 + "\n" + line2 + "\n" + line3
 }
 
 // ParentHeader renders a parent repo header for nested repos
