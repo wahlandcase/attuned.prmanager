@@ -53,13 +53,17 @@ type Model struct {
 	batchSelected         []bool
 	batchResults          []models.BatchResult
 	batchCurrent          int
+	batchCurrentRepo      string // Name of repo currently being processed
 	batchTotal            int
 	batchFilter           string
 	batchColumn           int // 0=Frontend, 1=Backend
 	batchFEIndex          int
 	batchBEIndex          int
-	batchExistingPRs      int // Count of repos with existing PRs (will update)
-	batchReposWithCommits int // Count of repos that have commits to merge
+	batchExistingPRs      int                // Count of repos with existing PRs (will update)
+	batchReposWithCommits int                // Count of repos that have commits to merge
+	batchConfirmScroll    int                // Scroll offset for batch confirmation right column
+	batchProgressChan     chan string        // Channel for real-time progress updates
+	batchCurrentStep      string             // Current step being executed (e.g., "Fetching branches...")
 
 	// Open PRs / Merge state
 	openPRs       []OpenPREntry
@@ -150,6 +154,33 @@ func (m *Model) spawnConfetti() {
 		})
 	}
 	m.typewriterPos = 0
+}
+
+// batchConfirmContentLines calculates total content lines for the right column
+func (m *Model) batchConfirmContentLines() int {
+	totalLines := 0
+	for i := range m.batchRepos {
+		if i < len(m.batchSelected) && m.batchSelected[i] {
+			if i < len(m.batchRepoCommits) && m.batchRepoCommits[i] != nil {
+				commits := *m.batchRepoCommits[i]
+				if len(commits) > 0 {
+					totalLines++ // repo name
+					if len(commits) > 3 {
+						totalLines += 4 // 3 commits + "more" line
+					} else {
+						totalLines += len(commits)
+					}
+					totalLines++ // blank line after repo
+				}
+			}
+		}
+	}
+	// Tickets section
+	if len(m.tickets) > 0 {
+		totalLines++ // header
+		totalLines += len(m.tickets)
+	}
+	return totalLines
 }
 
 // updateAnimations updates all animation state

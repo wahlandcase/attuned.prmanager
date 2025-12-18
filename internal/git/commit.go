@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // ticketPattern matches Linear ticket IDs (ATT-XXX)
@@ -77,21 +76,25 @@ func GetCommitsBetween(repoPath, baseBranch, headBranch string) ([]models.Commit
 	}
 
 	var commits []models.CommitInfo
+	seen := make(map[plumbing.Hash]bool)
 	err = headIter.ForEach(func(c *object.Commit) error {
-		// Skip if this commit is reachable from base
-		if baseCommits[c.Hash] {
-			return storer.ErrStop
+		// Skip if already processed or reachable from base.
+		// Don't stop iteration - merge commits have multiple parents
+		// and we need to traverse all paths to find feature commits.
+		if seen[c.Hash] || baseCommits[c.Hash] {
+			return nil
 		}
+		seen[c.Hash] = true
 
 		hash := c.Hash.String()[:7]
-		message := strings.Split(c.Message, "\n")[0] // First line only
-		tickets := ExtractTickets(message)
+		message := strings.Split(c.Message, "\n")[0] // First line for display
+		tickets := ExtractTickets(c.Message)         // Full message for tickets
 
 		commits = append(commits, models.NewCommitInfo(hash, message, tickets))
 		return nil
 	})
 
-	if err != nil && err != storer.ErrStop {
+	if err != nil {
 		return nil, err
 	}
 

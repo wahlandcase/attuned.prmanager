@@ -52,7 +52,7 @@ func (p PrType) Display(mainBranch string) string {
 func (p PrType) DefaultTitle(mainBranch string) string {
 	switch p {
 	case StagingToMain:
-		return "Sprint #"
+		return "Sprint # "
 	default:
 		return p.Display(mainBranch)
 	}

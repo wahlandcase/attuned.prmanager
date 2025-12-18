@@ -47,6 +47,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case batchRepoResult:
 		return m.handleBatchRepoResult(msg)
 
+	case batchProgressMsg:
+		m.batchCurrentStep = msg.step
+		// Continue listening for more progress updates
+		return m, listenForProgress(m.batchProgressChan)
+
 	case openPRsFetchedResult:
 		return m.handleOpenPRsFetchedResult(msg)
 
@@ -241,6 +246,7 @@ func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Go directly to confirmation (skip title input screen)
 		if m.mode != nil && *m.mode == ModeBatch {
 			m.screen = ScreenBatchConfirmation
+			m.batchConfirmScroll = 0
 		} else {
 			m.screen = ScreenConfirmation
 		}
@@ -256,6 +262,8 @@ func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.prTitle) > 0 {
 			m.prTitle = m.prTitle[:len(m.prTitle)-1]
 		}
+	case tea.KeySpace:
+		m.prTitle += " "
 	case tea.KeyRunes:
 		key := string(msg.Runes)
 		if key == "q" && m.prTitle == "" {
@@ -280,6 +288,7 @@ func (m Model) handleTitleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode != nil && *m.mode == ModeBatch {
 			m.screen = ScreenBatchConfirmation
+			m.batchConfirmScroll = 0
 		} else {
 			m.screen = ScreenConfirmation
 		}
@@ -295,6 +304,8 @@ func (m Model) handleTitleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.prTitle) > 0 {
 			m.prTitle = m.prTitle[:len(m.prTitle)-1]
 		}
+	case tea.KeySpace:
+		m.prTitle += " "
 	case tea.KeyRunes:
 		m.prTitle += string(msg.Runes)
 	}
@@ -308,6 +319,45 @@ func (m Model) handleConfirmationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "left", "right", "tab":
 		m.confirmSelection = 1 - m.confirmSelection
+	case "up":
+		// Scroll up in batch confirmation right column
+		if m.screen == ScreenBatchConfirmation {
+			// First clamp to max in case we're somehow beyond it
+			totalLines := m.batchConfirmContentLines()
+			visibleHeight := m.height - 10
+			if visibleHeight < 10 {
+				visibleHeight = 10
+			}
+			maxScroll := totalLines - visibleHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.batchConfirmScroll > maxScroll {
+				m.batchConfirmScroll = maxScroll
+			}
+			// Then scroll up if possible
+			if m.batchConfirmScroll > 0 {
+				m.batchConfirmScroll--
+			}
+		}
+	case "down":
+		// Scroll down in batch confirmation right column
+		if m.screen == ScreenBatchConfirmation {
+			// Calculate max scroll based on content and visible height
+			totalLines := m.batchConfirmContentLines()
+			// Estimate visible height (will be clamped in view anyway)
+			visibleHeight := m.height - 10
+			if visibleHeight < 10 {
+				visibleHeight = 10
+			}
+			maxScroll := totalLines - visibleHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.batchConfirmScroll < maxScroll {
+				m.batchConfirmScroll++
+			}
+		}
 	case "y":
 		m.confirmSelection = 0
 		return m.confirmAction()
@@ -343,8 +393,16 @@ func (m Model) confirmAction() (tea.Model, tea.Cmd) {
 		}
 		m.batchCurrent = 0
 		m.batchResults = nil
+		m.batchCurrentRepo = m.batchRepos[0].DisplayName
+		m.batchCurrentStep = ""
+		// Create progress channel for real-time updates
+		m.batchProgressChan = make(chan string, 1)
 		m.screen = ScreenBatchProcessing
-		return m, startBatchProcessingCmd(&m, 0)
+		// Start both the processing command and the progress listener
+		return m, tea.Batch(
+			startBatchProcessingCmd(&m, 0),
+			listenForProgress(m.batchProgressChan),
+		)
 	case ScreenMergeConfirmation:
 		// Count selected PRs
 		m.mergeTotal = 0

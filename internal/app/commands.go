@@ -51,6 +51,25 @@ type batchCommitsResult struct {
 	err              error
 }
 
+// batchProgressMsg is sent for real-time progress updates during batch processing
+type batchProgressMsg struct {
+	step string
+}
+
+// listenForProgress creates a subscription that listens to the progress channel
+func listenForProgress(ch chan string) tea.Cmd {
+	return func() tea.Msg {
+		if ch == nil {
+			return nil
+		}
+		step, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return batchProgressMsg{step: step}
+	}
+}
+
 // Commands
 
 func fetchCommitsCmd(repo *models.RepoInfo, prType *models.PrType, dryRun bool) tea.Cmd {
@@ -315,6 +334,17 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 	}
 }
 
+// sendProgress safely sends a progress update to the channel
+func sendProgress(ch chan string, step string) {
+	if ch != nil {
+		select {
+		case ch <- step:
+		default:
+			// Channel full or closed, skip
+		}
+	}
+}
+
 func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 	return func() tea.Msg {
 		if repoIndex >= len(m.batchRepos) {
@@ -322,6 +352,8 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 		}
 
 		repo := m.batchRepos[repoIndex]
+		progressCh := m.batchProgressChan
+
 		if repoIndex >= len(m.batchSelected) || !m.batchSelected[repoIndex] {
 			// Skip unselected repos
 			return batchRepoResult{result: models.BatchResult{
@@ -331,6 +363,7 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 		}
 
 		if m.dryRun {
+			sendProgress(progressCh, "Simulating PR creation...")
 			time.Sleep(500 * time.Millisecond)
 			url := "https://github.com/example/" + repo.DisplayName + "/pull/123 (DRY RUN)"
 			return batchRepoResult{result: models.BatchResult{
@@ -351,7 +384,8 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 		headBranch := prType.HeadBranch()
 		baseBranch := prType.BaseBranch(repo.MainBranch)
 
-		// Fetch and get commits
+		// Fetch branches
+		sendProgress(progressCh, "Fetching branches...")
 		if err := git.FetchBranches(repo.Path, []string{headBranch, baseBranch}); err != nil {
 			return batchRepoResult{result: models.BatchResult{
 				Repo:   repo,
@@ -359,6 +393,8 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 			}}
 		}
 
+		// Get commits
+		sendProgress(progressCh, "Getting commits...")
 		commits, err := git.GetCommitsBetween(repo.Path, baseBranch, headBranch)
 		if err != nil {
 			return batchRepoResult{result: models.BatchResult{
@@ -377,6 +413,7 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 		tickets := git.GetAllTickets(commits)
 
 		// Create or update PR
+		sendProgress(progressCh, "Creating PR...")
 		pr, updated, err := github.CreateOrUpdatePR(repo.Path, headBranch, baseBranch, m.prTitle, tickets)
 		if err != nil {
 			return batchRepoResult{result: models.BatchResult{
@@ -676,6 +713,13 @@ func (m Model) handleBatchRepoResult(msg batchRepoResult) (tea.Model, tea.Cmd) {
 
 	// Process all repos, not just selected count
 	if m.batchCurrent >= len(m.batchRepos) {
+		m.batchCurrentRepo = ""
+		m.batchCurrentStep = ""
+		// Close progress channel
+		if m.batchProgressChan != nil {
+			close(m.batchProgressChan)
+			m.batchProgressChan = nil
+		}
 		m.screen = ScreenBatchSummary
 		m.menuIndex = 0
 		// Spawn confetti if any successes
@@ -688,8 +732,13 @@ func (m Model) handleBatchRepoResult(msg batchRepoResult) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Start next batch repo processing
-	return m, startBatchProcessingCmd(&m, m.batchCurrent)
+	// Set next repo name, clear step, and start processing
+	m.batchCurrentRepo = m.batchRepos[m.batchCurrent].DisplayName
+	m.batchCurrentStep = ""
+	return m, tea.Batch(
+		startBatchProcessingCmd(&m, m.batchCurrent),
+		listenForProgress(m.batchProgressChan),
+	)
 }
 
 func (m Model) handleOpenPRsFetchedResult(msg openPRsFetchedResult) (tea.Model, tea.Cmd) {

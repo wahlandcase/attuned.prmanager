@@ -98,7 +98,7 @@ func (m Model) renderContentWithHeight(availableHeight int) string {
 	case ScreenBatchRepoSelect:
 		return m.renderBatchRepoSelectWithHeight(availableHeight)
 	case ScreenBatchConfirmation:
-		return m.renderBatchConfirmation()
+		return m.renderBatchConfirmationWithHeight(availableHeight)
 	case ScreenBatchProcessing:
 		return m.renderBatchProcessing()
 	case ScreenBatchSummary:
@@ -1153,12 +1153,20 @@ func applyViewportScroll(lines []string, headerLines int, highlightedLine int, v
 	return strings.Join(append(header, visibleContent...), "\n")
 }
 
-func (m Model) renderBatchConfirmation() string {
+func (m Model) renderBatchConfirmationWithHeight(availableHeight int) string {
 	selectedCount := 0
 	for _, s := range m.batchSelected {
 		if s {
 			selectedCount++
 		}
+	}
+
+	// Calculate dynamic limit for left column repos based on available height
+	maxReposLeft := (availableHeight - 12) / 1
+	if maxReposLeft < 3 {
+		maxReposLeft = 3
+	} else if maxReposLeft > 10 {
+		maxReposLeft = 10
 	}
 
 	// Get selected repo names
@@ -1196,10 +1204,10 @@ func (m Model) renderBatchConfirmation() string {
 	leftLines = append(leftLines, ui.SectionHeader(fmt.Sprintf("REPOSITORIES (%d)", selectedCount), ui.ColorMagenta))
 	leftLines = append(leftLines, "")
 
-	// List selected repos (max 8)
+	// List selected repos (dynamic limit based on height)
 	for i, name := range selectedRepos {
-		if i >= 8 {
-			remaining := len(selectedRepos) - 8
+		if i >= maxReposLeft {
+			remaining := len(selectedRepos) - maxReposLeft
 			leftLines = append(leftLines, fmt.Sprintf("    ... and %d more", remaining))
 			break
 		}
@@ -1255,9 +1263,8 @@ func (m Model) renderBatchConfirmation() string {
 	}
 	leftContent := leftTitleStyle.Render(panelTitle) + "\n" + strings.Join(leftLines, "\n")
 
-	// Build right column (commits & tickets per repo)
+	// Build right column (commits & tickets per repo) - build ALL content first
 	var rightLines []string
-	rightLines = append(rightLines, "")
 
 	repoNameStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true)
 	ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
@@ -1265,8 +1272,7 @@ func (m Model) renderBatchConfirmation() string {
 	commitStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
 	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
 
-	// Show commits and tickets per selected repo
-	reposShown := 0
+	// Show commits and tickets per selected repo (no limit - we'll scroll)
 	for i, repo := range m.batchRepos {
 		if i >= len(m.batchSelected) || !m.batchSelected[i] {
 			continue
@@ -1283,16 +1289,6 @@ func (m Model) renderBatchConfirmation() string {
 			continue
 		}
 
-		reposShown++
-		if reposShown > 6 {
-			// Limit repos to fit in panel
-			remaining := m.batchReposWithCommits - 6
-			if remaining > 0 {
-				rightLines = append(rightLines, dimStyle.Render(fmt.Sprintf("  ... and %d more repos", remaining)))
-			}
-			break
-		}
-
 		// Repo name header
 		name := repo.DisplayName
 		if idx := strings.LastIndex(name, "/"); idx != -1 {
@@ -1300,7 +1296,7 @@ func (m Model) renderBatchConfirmation() string {
 		}
 		rightLines = append(rightLines, fmt.Sprintf("  %s", repoNameStyle.Render(name)))
 
-		// Show commits with tickets
+		// Show commits with tickets (limit to 3 per repo for readability)
 		maxCommits := 3
 		for j, commit := range commits {
 			if j >= maxCommits {
@@ -1332,13 +1328,8 @@ func (m Model) renderBatchConfirmation() string {
 	// Tickets summary at bottom
 	if len(m.tickets) > 0 {
 		rightLines = append(rightLines, ui.SectionHeader("TICKETS", ui.ColorYellow))
-		// List actual tickets
-		maxTickets := 6
-		for i, ticket := range m.tickets {
-			if i >= maxTickets {
-				rightLines = append(rightLines, dimStyle.Render(fmt.Sprintf("  +%d more", len(m.tickets)-maxTickets)))
-				break
-			}
+		// List all tickets (scrollable now)
+		for _, ticket := range m.tickets {
 			rightLines = append(rightLines, fmt.Sprintf("  🎫 %s", ticketStyle.Render(ticket)))
 		}
 	}
@@ -1349,8 +1340,66 @@ func (m Model) renderBatchConfirmation() string {
 		rightLines = append(rightLines, warningStyle.Render("  ⚠ DRY RUN MODE"))
 	}
 
+	// Apply scrolling to right column
+	visibleHeight := availableHeight - 4 // Account for title and padding
+	if visibleHeight < 5 {
+		visibleHeight = 5
+	}
+
+	totalLines := len(rightLines)
+	maxScroll := totalLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	// Clamp scroll offset
+	scrollOffset := m.batchConfirmScroll
+	if scrollOffset > maxScroll {
+		scrollOffset = maxScroll
+	}
+	if scrollOffset < 0 {
+		scrollOffset = 0
+	}
+
+	// Get visible window of lines with consistent height
+	var visibleLines []string
+	visibleLines = append(visibleLines, "") // Top padding
+
+	// Always reserve space for scroll up indicator
+	if scrollOffset > 0 {
+		visibleLines = append(visibleLines, dimStyle.Render("  ↑ more above"))
+	} else {
+		visibleLines = append(visibleLines, "") // Empty line to maintain height
+	}
+
+	// Calculate visible portion (account for indicator lines)
+	contentHeight := visibleHeight - 2 // Reserve 2 lines for indicators
+	if contentHeight < 3 {
+		contentHeight = 3
+	}
+
+	endIdx := scrollOffset + contentHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	if scrollOffset < totalLines {
+		visibleLines = append(visibleLines, rightLines[scrollOffset:endIdx]...)
+	}
+
+	// Pad to consistent height
+	for len(visibleLines) < contentHeight+2 {
+		visibleLines = append(visibleLines, "")
+	}
+
+	// Always reserve space for scroll down indicator
+	if endIdx < totalLines {
+		visibleLines = append(visibleLines, dimStyle.Render("  ↓ more below"))
+	} else {
+		visibleLines = append(visibleLines, "") // Empty line to maintain height
+	}
+
 	rightTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorMagenta)
-	rightContent := rightTitleStyle.Render(" 📋 Changes ") + "\n" + strings.Join(rightLines, "\n")
+	rightContent := rightTitleStyle.Render(" 📋 Changes ") + "\n" + strings.Join(visibleLines, "\n")
 
 	return ui.UnifiedPanel(leftContent, rightContent, 50, 45, ui.ColorCyan)
 }
@@ -1358,22 +1407,75 @@ func (m Model) renderBatchConfirmation() string {
 func (m Model) renderBatchProcessing() string {
 	var lines []string
 
-	lines = append(lines, ui.SectionHeader("Processing Repositories", ui.ColorMagenta))
+	// Header with count - use selected count, not total repos
+	// len(batchResults) = completed, +1 if currently processing one
+	processedCount := len(m.batchResults)
+	if m.batchCurrentRepo != "" {
+		processedCount++
+	}
+	countStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+	header := fmt.Sprintf("Processing Repositories %s", countStyle.Render(fmt.Sprintf("(%d/%d)", processedCount, m.batchTotal)))
+	lines = append(lines, ui.SectionHeader(header, ui.ColorMagenta))
 	lines = append(lines, "")
 
+	// Current repo being processed
 	spinner := ui.Spinner(m.spinnerFrame)
 	spinnerStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
-	statusStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+	repoStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+	stepStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
 
-	lines = append(lines, fmt.Sprintf("   %s %s",
-		spinnerStyle.Render(spinner),
-		statusStyle.Render("Processing repos..."),
-	))
+	if m.batchCurrentRepo != "" {
+		lines = append(lines, fmt.Sprintf("   %s Processing %s...",
+			spinnerStyle.Render(spinner),
+			repoStyle.Render(m.batchCurrentRepo),
+		))
+		// Show current step if available
+		if m.batchCurrentStep != "" {
+			lines = append(lines, fmt.Sprintf("      → %s", stepStyle.Render(m.batchCurrentStep)))
+		}
+	}
 	lines = append(lines, "")
 
-	progress := ui.ProgressBar(m.batchCurrent, len(m.batchRepos), 30)
-	lines = append(lines, fmt.Sprintf("   %s", progress))
-	lines = append(lines, "")
+	// Completed results log
+	if len(m.batchResults) > 0 {
+		lines = append(lines, ui.SectionHeader("Completed", ui.ColorWhite))
+		lines = append(lines, "")
+
+		for _, result := range m.batchResults {
+			var icon string
+			var statusText string
+			var color lipgloss.Color
+
+			if models.IsStatusCreated(result.Status) {
+				icon = "✓"
+				statusText = "PR created"
+				color = ui.ColorGreen
+			} else if models.IsStatusUpdated(result.Status) {
+				icon = "✓"
+				statusText = "PR updated"
+				color = ui.ColorGreen
+			} else if models.IsStatusSkipped(result.Status) {
+				icon = "⊘"
+				statusText = models.GetStatusReason(result.Status)
+				color = ui.ColorYellow
+			} else if models.IsStatusFailed(result.Status) {
+				icon = "✗"
+				statusText = models.GetStatusReason(result.Status)
+				color = ui.ColorRed
+			}
+
+			iconStyle := lipgloss.NewStyle().Foreground(color)
+			repoNameStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+			statusStyle := lipgloss.NewStyle().Foreground(color)
+
+			lines = append(lines, fmt.Sprintf("   %s %s: %s",
+				iconStyle.Render(icon),
+				repoNameStyle.Render(result.Repo.DisplayName),
+				statusStyle.Render(statusText),
+			))
+		}
+		lines = append(lines, "")
+	}
 
 	return strings.Join(lines, "\n")
 }
