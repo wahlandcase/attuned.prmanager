@@ -1261,7 +1261,11 @@ func (m Model) renderBatchConfirmationWithHeight(availableHeight int) string {
 	if m.batchExistingPRs == selectedCount {
 		panelTitle = " 🔄 Update PRs "
 	}
+
 	leftContent := leftTitleStyle.Render(panelTitle) + "\n" + strings.Join(leftLines, "\n")
+
+	// Calculate max height for right column to match left column height
+	leftHeight := len(leftLines) + 1 // +1 for title
 
 	// Build right column (commits & tickets per repo) - build ALL content first
 	var rightLines []string
@@ -1340,8 +1344,8 @@ func (m Model) renderBatchConfirmationWithHeight(availableHeight int) string {
 		rightLines = append(rightLines, warningStyle.Render("  ⚠ DRY RUN MODE"))
 	}
 
-	// Apply scrolling to right column
-	visibleHeight := availableHeight - 4 // Account for title and padding
+	// Apply scrolling to right column - constrain to left column height
+	visibleHeight := leftHeight - 2 // -2 for title overhead
 	if visibleHeight < 5 {
 		visibleHeight = 5
 	}
