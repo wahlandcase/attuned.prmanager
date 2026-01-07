@@ -5,9 +5,9 @@ import (
 	"math/rand"
 	"time"
 
-	"attuned-release/internal/config"
-	"attuned-release/internal/models"
-	"attuned-release/internal/ui"
+	"github.com/wahlandcase/attuned.prmanager/internal/config"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

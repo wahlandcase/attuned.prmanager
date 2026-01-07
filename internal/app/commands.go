@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"attuned-release/internal/config"
-	"attuned-release/internal/git"
-	"attuned-release/internal/github"
-	"attuned-release/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/config"
+	"github.com/wahlandcase/attuned.prmanager/internal/git"
+	"github.com/wahlandcase/attuned.prmanager/internal/github"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

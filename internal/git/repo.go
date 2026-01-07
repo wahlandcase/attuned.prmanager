@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"attuned-release/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"

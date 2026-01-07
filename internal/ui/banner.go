@@ -38,23 +38,3 @@ func RenderBanner(dryRun bool) string {
 
 	return strings.Join(lines, "\n")
 }
-
-// RenderBannerLines returns the banner as individual lines for more control
-func RenderBannerLines(dryRun bool) []string {
-	bannerStyle := lipgloss.NewStyle().Foreground(ColorCyan)
-
-	var lines []string
-	for _, line := range Banner {
-		lines = append(lines, bannerStyle.Render(line))
-	}
-
-	if dryRun {
-		lines = append(lines, "")
-		warningStyle := lipgloss.NewStyle().
-			Foreground(ColorYellow).
-			Bold(true)
-		lines = append(lines, warningStyle.Render("⚠ DRY RUN MODE"))
-	}
-
-	return lines
-}

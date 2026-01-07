@@ -143,46 +143,12 @@ func Checkbox(checked bool) string {
 	return "[ ]"
 }
 
-// CheckboxStyled renders a styled checkbox
-func CheckboxStyled(checked bool, color lipgloss.Color) string {
-	style := lipgloss.NewStyle().Foreground(color)
-	return style.Render(Checkbox(checked))
-}
-
 // Arrow returns an arrow indicator for selection
 func Arrow(selected bool) string {
 	if selected {
 		return "▶ "
 	}
 	return "  "
-}
-
-// ArrowStyled returns a styled arrow indicator
-func ArrowStyled(selected bool, color lipgloss.Color) string {
-	style := lipgloss.NewStyle().Foreground(color)
-	return style.Render(Arrow(selected))
-}
-
-// ProgressBar creates a progress bar
-func ProgressBar(current, total int, width int) string {
-	if total == 0 {
-		return ""
-	}
-
-	progress := float64(current) / float64(total)
-	filled := int(progress * float64(width))
-	empty := width - filled
-
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
-	percentage := int(progress * 100)
-
-	barStyle := lipgloss.NewStyle().Foreground(ColorGreen)
-	percentStyle := lipgloss.NewStyle().Foreground(ColorWhite)
-
-	return fmt.Sprintf("%s %s",
-		barStyle.Render(fmt.Sprintf("[%s]", bar)),
-		percentStyle.Render(fmt.Sprintf("%d%%", percentage)),
-	)
 }
 
 // KeyBinding renders a key binding hint
@@ -194,24 +160,6 @@ func KeyBinding(key, description string, color lipgloss.Color) string {
 		keyStyle.Render(key),
 		descStyle.Render(description),
 	)
-}
-
-// StatusIcon returns the appropriate status icon and color
-func StatusIcon(status string) (string, lipgloss.Color) {
-	switch status {
-	case "created", "success":
-		return "✓", ColorGreen
-	case "updated":
-		return "↻", ColorBlue
-	case "skipped":
-		return "⊘", ColorYellow
-	case "failed", "error":
-		return "✗", ColorRed
-	case "loading":
-		return "⏳", ColorYellow
-	default:
-		return "·", ColorWhite
-	}
 }
 
 // max returns the maximum of two integers
@@ -283,32 +231,6 @@ func MenuInfoPanel(index int) (title string, lines []string) {
 		}
 	}
 	return title, lines
-}
-
-// Box creates a bordered box with optional title
-func Box(content string, title string, borderColor lipgloss.Color) string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1)
-
-	if title != "" {
-		style = style.BorderTop(true)
-	}
-
-	return style.Render(content)
-}
-
-// BoxWithTitle creates a bordered box with a title
-func BoxWithTitle(content string, title string, borderColor lipgloss.Color, width int) string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(width)
-
-	// For now, just use the box - lipgloss handles titles differently
-	return style.Render(content)
 }
 
 // TwoColumns renders two columns side by side
@@ -408,31 +330,6 @@ func FilterInput(filter string, title string, color lipgloss.Color, width int) s
 
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color)
 	return style.Render(titleStyle.Render(title) + "\n" + content)
-}
-
-// RepoListItem renders a single repo item with checkbox
-func RepoListItem(name string, selected bool, highlighted bool, color lipgloss.Color, indent string) string {
-	checkbox := Checkbox(selected)
-	arrow := Arrow(highlighted)
-
-	var style lipgloss.Style
-	if highlighted {
-		style = lipgloss.NewStyle().Foreground(color).Bold(true)
-	} else if selected {
-		style = lipgloss.NewStyle().Foreground(color)
-	} else {
-		style = lipgloss.NewStyle().Foreground(ColorWhite)
-	}
-
-	indentStyle := lipgloss.NewStyle().Foreground(ColorDarkGray)
-	checkStyle := lipgloss.NewStyle().Foreground(color)
-
-	return fmt.Sprintf("%s%s%s %s",
-		style.Render(arrow),
-		indentStyle.Render(indent),
-		checkStyle.Render(checkbox),
-		name,
-	)
 }
 
 // RepoListItemWithCommits renders a repo item with checkbox and commit indicator

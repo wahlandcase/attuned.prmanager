@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"attuned-release/internal/models"
-	"attuned-release/internal/ui"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
 )

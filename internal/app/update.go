@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"attuned-release/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

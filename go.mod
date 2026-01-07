@@ -1,4 +1,4 @@
-module attuned-release
+module github.com/wahlandcase/attuned.prmanager
 
 go 1.25.5
 

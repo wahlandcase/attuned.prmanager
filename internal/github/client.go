@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"attuned-release/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/models"
 )
 
 // CheckAuth verifies gh CLI is authenticated
