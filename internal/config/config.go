@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -11,6 +13,9 @@ import (
 type Config struct {
 	Paths   PathsConfig   `toml:"paths"`
 	Tickets TicketsConfig `toml:"tickets"`
+
+	// Compiled regex from Tickets.Pattern (not serialized)
+	ticketRegex *regexp.Regexp
 }
 
 type PathsConfig struct {
@@ -20,7 +25,8 @@ type PathsConfig struct {
 }
 
 type TicketsConfig struct {
-	Pattern string `toml:"pattern"`
+	Pattern   string `toml:"pattern"`
+	LinearOrg string `toml:"linear_org"`
 }
 
 func DefaultConfig() *Config {
@@ -31,7 +37,8 @@ func DefaultConfig() *Config {
 			BackendGlob:  "backend/*",
 		},
 		Tickets: TicketsConfig{
-			Pattern: "ATT-[0-9]+",
+			Pattern:   "ATT-[0-9]+",
+			LinearOrg: "attuned",
 		},
 	}
 }
@@ -47,13 +54,20 @@ func configPath() (string, error) {
 func Load() (*Config, error) {
 	path, err := configPath()
 	if err != nil {
-		return DefaultConfig(), nil
+		cfg := DefaultConfig()
+		if err := cfg.compileRegex(); err != nil {
+			return nil, err
+		}
+		return cfg, nil
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			cfg := DefaultConfig()
+			if err := cfg.compileRegex(); err != nil {
+				return nil, err
+			}
 			_ = cfg.Save() // Best effort save
 			return cfg, nil
 		}
@@ -65,7 +79,31 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	if err := cfg.compileRegex(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+func (c *Config) compileRegex() error {
+	// Empty pattern = ticket extraction disabled
+	if c.Tickets.Pattern == "" {
+		c.ticketRegex = nil
+		return nil
+	}
+	re, err := regexp.Compile("(?i)(" + c.Tickets.Pattern + ")")
+	if err != nil {
+		return fmt.Errorf("invalid tickets.pattern %q: %w", c.Tickets.Pattern, err)
+	}
+	c.ticketRegex = re
+	return nil
+}
+
+// TicketRegex returns the compiled ticket pattern regex (nil if disabled)
+func (c *Config) TicketRegex() *regexp.Regexp {
+	// Safe even if compileRegex() was never called
+	return c.ticketRegex
 }
 
 func (c *Config) Save() error {

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,34 +153,38 @@ func (e *BranchNotFoundError) Error() string {
 }
 
 // FindAttunedRepos finds all git repositories in the attuned directory structure
-func FindAttunedRepos(basePath string) ([]models.RepoInfo, error) {
+func FindAttunedRepos(basePath, frontendGlob, backendGlob string) ([]models.RepoInfo, error) {
 	var repos []models.RepoInfo
 
-	// Look in frontend/* and backend/*
-	for _, subdir := range []string{"frontend", "backend"} {
-		dirPath := filepath.Join(basePath, subdir)
-		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-			continue
-		}
+	// Process each glob pattern with its category name
+	globs := []struct {
+		category string
+		pattern  string
+	}{
+		{"frontend", frontendGlob},
+		{"backend", backendGlob},
+	}
 
-		entries, err := os.ReadDir(dirPath)
+	for _, g := range globs {
+		pattern := filepath.Join(basePath, g.pattern)
+		matches, err := filepath.Glob(pattern)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("invalid %s glob %q: %w", g.category, g.pattern, err)
 		}
 
-		for _, entry := range entries {
-			if !entry.IsDir() {
+		for _, path := range matches {
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
 				continue
 			}
 
-			path := filepath.Join(dirPath, entry.Name())
-			repoName := entry.Name()
+			repoName := filepath.Base(path)
 
 			if IsGitRepo(path) {
-				displayName := subdir + "/" + repoName
+				displayName := g.category + "/" + repoName
 
 				// Check for nested git repos inside this repo (like attuned-services)
-				nestedRepos := findNestedRepos(path, subdir, repoName)
+				nestedRepos := findNestedRepos(path, g.category, repoName)
 
 				if len(nestedRepos) > 0 {
 					// This is a parent repo with nested repos - add the nested ones

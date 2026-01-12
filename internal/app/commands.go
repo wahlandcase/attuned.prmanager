@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -72,7 +73,7 @@ func listenForProgress(ch chan string) tea.Cmd {
 
 // Commands
 
-func fetchCommitsCmd(repo *models.RepoInfo, prType *models.PrType, dryRun bool) tea.Cmd {
+func fetchCommitsCmd(repo *models.RepoInfo, prType *models.PrType, ticketRegex *regexp.Regexp, dryRun bool) tea.Cmd {
 	return func() tea.Msg {
 		// Dry run mode: return fake commits
 		if dryRun {
@@ -101,7 +102,7 @@ func fetchCommitsCmd(repo *models.RepoInfo, prType *models.PrType, dryRun bool) 
 		}
 
 		// Get commits between branches
-		commits, err := git.GetCommitsBetween(repo.Path, baseBranch, headBranch)
+		commits, err := git.GetCommitsBetween(repo.Path, baseBranch, headBranch, ticketRegex)
 		if err != nil {
 			return fetchCommitsResult{err: err}
 		}
@@ -211,7 +212,7 @@ func fetchBatchCommitsCmd(repos []models.RepoInfo, selected []bool, cachedCommit
 	}
 }
 
-func createPRCmd(repo *models.RepoInfo, prType *models.PrType, title string, tickets []string, dryRun bool) tea.Cmd {
+func createPRCmd(repo *models.RepoInfo, prType *models.PrType, title string, tickets []string, linearOrg string, dryRun bool) tea.Cmd {
 	return func() tea.Msg {
 		// Dry run mode: return fake URL
 		if dryRun {
@@ -231,7 +232,7 @@ func createPRCmd(repo *models.RepoInfo, prType *models.PrType, title string, tic
 		baseBranch := prType.BaseBranch(repo.MainBranch)
 
 		// Create or update PR
-		pr, _, err := github.CreateOrUpdatePR(repo.Path, headBranch, baseBranch, title, tickets)
+		pr, _, err := github.CreateOrUpdatePR(repo.Path, headBranch, baseBranch, title, tickets, linearOrg)
 		if err != nil {
 			return prCreatedResult{err: err}
 		}
@@ -287,15 +288,16 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 		}
 
 		// Find all repos
-		repos, err := git.FindAttunedRepos(cfg.AttunedPath())
+		repos, err := git.FindAttunedRepos(cfg.AttunedPath(), cfg.Paths.FrontendGlob, cfg.Paths.BackendGlob)
 		if err != nil {
 			return openPRsFetchedResult{err: err}
 		}
 
 		// Fetch open PRs in parallel
 		type result struct {
-			entry OpenPREntry
+			entry  OpenPREntry
 			hasAny bool
+			err    error
 		}
 
 		var wg sync.WaitGroup
@@ -306,11 +308,15 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 			go func(r models.RepoInfo) {
 				defer wg.Done()
 
-				status := github.GetOpenReleasePRs(r.Path, r.MainBranch)
+				status, err := github.GetOpenReleasePRs(r.Path, r.MainBranch)
+				if err != nil {
+					results <- result{err: err}
+					return
+				}
 				hasAny := status.DevToStaging != nil || status.StagingToMain != nil
 
 				results <- result{
-					entry: OpenPREntry{Repo: r, Status: *status},
+					entry:  OpenPREntry{Repo: r, Status: *status},
 					hasAny: hasAny,
 				}
 			}(repo)
@@ -325,6 +331,9 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 		// Collect results, filtering to only repos with open PRs
 		var entries []OpenPREntry
 		for res := range results {
+			if res.err != nil {
+				return openPRsFetchedResult{err: res.err}
+			}
 			if res.hasAny {
 				entries = append(entries, res.entry)
 			}
@@ -395,7 +404,7 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 
 		// Get commits
 		sendProgress(progressCh, "Getting commits...")
-		commits, err := git.GetCommitsBetween(repo.Path, baseBranch, headBranch)
+		commits, err := git.GetCommitsBetween(repo.Path, baseBranch, headBranch, m.config.TicketRegex())
 		if err != nil {
 			return batchRepoResult{result: models.BatchResult{
 				Repo:   repo,
@@ -414,7 +423,7 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 
 		// Create or update PR
 		sendProgress(progressCh, "Creating PR...")
-		pr, updated, err := github.CreateOrUpdatePR(repo.Path, headBranch, baseBranch, m.prTitle, tickets)
+		pr, updated, err := github.CreateOrUpdatePR(repo.Path, headBranch, baseBranch, m.prTitle, tickets, m.config.Tickets.LinearOrg)
 		if err != nil {
 			return batchRepoResult{result: models.BatchResult{
 				Repo:   repo,
@@ -500,7 +509,7 @@ type currentRepoLoadedResult struct {
 // loadBatchReposCmd loads repos and starts background commit fetching
 func loadBatchReposCmd(cfg *config.Config, prType *models.PrType, dryRun bool, resultsChan chan batchRepoCommitResult) tea.Cmd {
 	return func() tea.Msg {
-		repos, err := git.FindAttunedRepos(cfg.AttunedPath())
+		repos, err := git.FindAttunedRepos(cfg.AttunedPath(), cfg.Paths.FrontendGlob, cfg.Paths.BackendGlob)
 		if err != nil {
 			return batchReposLoadedResult{err: err}
 		}
@@ -546,7 +555,7 @@ func loadBatchReposCmd(cfg *config.Config, prType *models.PrType, dryRun bool, r
 
 						// Fetch from remote (network call)
 						if err := git.FetchBranches(r.Path, []string{headBranch, baseBranch}); err == nil {
-							commits, _ = git.GetCommitsBetween(r.Path, baseBranch, headBranch)
+							commits, _ = git.GetCommitsBetween(r.Path, baseBranch, headBranch, cfg.TicketRegex())
 						}
 					}
 
@@ -828,8 +837,8 @@ func isWSL() bool {
 	if err != nil {
 		return false
 	}
-	lower := strings.ToLower(string(data))
-	return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl")
+	version := strings.ToLower(string(data))
+	return strings.Contains(version, "microsoft") || strings.Contains(version, "wsl")
 }
 
 // copyToClipboard copies text to the system clipboard

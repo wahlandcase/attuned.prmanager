@@ -119,25 +119,32 @@ func GetPR(repoPath string, prNumber uint64) (*models.GhPr, error) {
 }
 
 // GetOpenReleasePRs gets open release PRs for a repo (dev->staging and staging->main)
-func GetOpenReleasePRs(repoPath, mainBranch string) *models.RepoPrStatus {
-	devToStaging, _ := GetExistingPR(repoPath, "dev", "staging")
-	stagingToMain, _ := GetExistingPR(repoPath, "staging", mainBranch)
+func GetOpenReleasePRs(repoPath, mainBranch string) (*models.RepoPrStatus, error) {
+	devToStaging, err := GetExistingPR(repoPath, "dev", "staging")
+	if err != nil {
+		return nil, fmt.Errorf("checking dev->staging: %w", err)
+	}
+
+	stagingToMain, err := GetExistingPR(repoPath, "staging", mainBranch)
+	if err != nil {
+		return nil, fmt.Errorf("checking staging->%s: %w", mainBranch, err)
+	}
 
 	return &models.RepoPrStatus{
 		DevToStaging:  devToStaging,
 		StagingToMain: stagingToMain,
-	}
+	}, nil
 }
 
 // GeneratePRBody generates PR body with ticket links using Linear magic words
-func GeneratePRBody(tickets []string) string {
+func GeneratePRBody(tickets []string, linearOrg string) string {
 	if len(tickets) == 0 {
 		return ""
 	}
 
 	var lines []string
 	for _, t := range tickets {
-		line := fmt.Sprintf("### - Closes [%s](https://linear.app/attuned/issue/%s)", t, strings.ToLower(t))
+		line := fmt.Sprintf("### - Closes [%s](https://linear.app/%s/issue/%s)", t, linearOrg, strings.ToLower(t))
 		lines = append(lines, line)
 	}
 
@@ -162,8 +169,8 @@ func MergePR(repoPath string, prNumber uint64) error {
 }
 
 // CreateOrUpdatePR creates a new PR or updates an existing one
-func CreateOrUpdatePR(repoPath, headBranch, baseBranch, title string, tickets []string) (*models.GhPr, bool, error) {
-	body := GeneratePRBody(tickets)
+func CreateOrUpdatePR(repoPath, headBranch, baseBranch, title string, tickets []string, linearOrg string) (*models.GhPr, bool, error) {
+	body := GeneratePRBody(tickets, linearOrg)
 
 	// Check for existing PR
 	existing, err := GetExistingPR(repoPath, headBranch, baseBranch)

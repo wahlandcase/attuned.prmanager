@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -405,7 +404,7 @@ func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
 		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
 		commitLines = append(commitLines, dimStyle.Render("  No commits to merge"))
 	} else {
-		ticketRegex := regexp.MustCompile(`(ATT-\d+)`)
+		ticketRegex := m.config.TicketRegex()
 
 		for _, commit := range m.commits {
 			hashStyle := lipgloss.NewStyle().Foreground(ui.ColorMagenta)
@@ -418,9 +417,12 @@ func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
 
 			// Highlight tickets in yellow within the message
 			msg := commit.Message
-			styledMsg := ticketRegex.ReplaceAllStringFunc(msg, func(match string) string {
-				return ticketStyle.Render(match)
-			})
+			styledMsg := msg
+			if ticketRegex != nil {
+				styledMsg = ticketRegex.ReplaceAllStringFunc(msg, func(match string) string {
+					return ticketStyle.Render(match)
+				})
+			}
 
 			// Wrap message to fit column, with indent
 			indent := "    "
@@ -635,7 +637,7 @@ func (m Model) renderConfirmation() string {
 		for _, ticket := range m.tickets {
 			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
 			urlStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
-			linearURL := fmt.Sprintf("https://linear.app/attuned/issue/%s", strings.ToLower(ticket))
+			linearURL := fmt.Sprintf("https://linear.app/%s/issue/%s", m.config.Tickets.LinearOrg, strings.ToLower(ticket))
 			leftLines = append(leftLines, fmt.Sprintf("  ### - Closes %s%s", ticketStyle.Render(fmt.Sprintf("[%s]", ticket)), urlStyle.Render(fmt.Sprintf("(%s)", linearURL))))
 		}
 	}
@@ -1071,7 +1073,7 @@ func (m Model) renderCommitsPreview(repoIdx int, width int) string {
 			hashStyle := lipgloss.NewStyle().Foreground(ui.ColorMagenta)
 			msgStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
 			ticketStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
-			ticketRegex := regexp.MustCompile(`(ATT-\d+)`)
+			ticketRegex := m.config.TicketRegex()
 
 			maxCommits := 3
 			for i, commit := range commits {
@@ -1088,9 +1090,12 @@ func (m Model) renderCommitsPreview(repoIdx int, width int) string {
 					msg = msg[:maxMsgLen-3] + "..."
 				}
 				// Highlight tickets in message
-				styledMsg := ticketRegex.ReplaceAllStringFunc(msg, func(match string) string {
-					return ticketStyle.Render(match)
-				})
+				styledMsg := msg
+				if ticketRegex != nil {
+					styledMsg = ticketRegex.ReplaceAllStringFunc(msg, func(match string) string {
+						return ticketStyle.Render(match)
+					})
+				}
 				lines = append(lines, fmt.Sprintf("  %s %s", hashStyle.Render(commit.Hash), msgStyle.Render(styledMsg)))
 			}
 		}

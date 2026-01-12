@@ -12,12 +12,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// ticketPattern matches Linear ticket IDs (ATT-XXX)
-var ticketPattern = regexp.MustCompile(`(?i)(ATT-\d+)`)
+// ExtractTickets extracts ticket IDs from text using the given compiled regex
+func ExtractTickets(text string, ticketRegex *regexp.Regexp) []string {
+	if ticketRegex == nil {
+		return nil
+	}
 
-// ExtractTickets extracts Linear ticket IDs from text
-func ExtractTickets(text string) []string {
-	matches := ticketPattern.FindAllStringSubmatch(text, -1)
+	matches := ticketRegex.FindAllStringSubmatch(text, -1)
 
 	ticketSet := make(map[string]bool)
 	for _, match := range matches {
@@ -39,7 +40,7 @@ func ExtractTickets(text string) []string {
 
 // GetCommitsBetween gets commits between two branches (base..head)
 // Returns commits that are in head but not in base
-func GetCommitsBetween(repoPath, baseBranch, headBranch string) ([]models.CommitInfo, error) {
+func GetCommitsBetween(repoPath, baseBranch, headBranch string, ticketRegex *regexp.Regexp) ([]models.CommitInfo, error) {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return nil, err
@@ -87,8 +88,8 @@ func GetCommitsBetween(repoPath, baseBranch, headBranch string) ([]models.Commit
 		seen[c.Hash] = true
 
 		hash := c.Hash.String()[:7]
-		message := strings.Split(c.Message, "\n")[0] // First line for display
-		tickets := ExtractTickets(c.Message)         // Full message for tickets
+		message := strings.Split(c.Message, "\n")[0]      // First line for display
+		tickets := ExtractTickets(c.Message, ticketRegex) // Full message for tickets
 
 		commits = append(commits, models.NewCommitInfo(hash, message, tickets))
 		return nil

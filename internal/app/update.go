@@ -205,12 +205,8 @@ func (m Model) handlePrTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) selectPrType() (tea.Model, tea.Cmd) {
-	var prType models.PrType
-	if m.menuIndex == 0 {
-		prType = models.DevToStaging
-	} else {
-		prType = models.StagingToMain
-	}
+	prTypes := []models.PrType{models.DevToStaging, models.StagingToMain}
+	prType := prTypes[m.menuIndex]
 	m.prType = &prType
 
 	if m.mode != nil && *m.mode == ModeBatch {
@@ -224,7 +220,7 @@ func (m Model) selectPrType() (tea.Model, tea.Cmd) {
 		// Single mode - start fetching commits
 		m.screen = ScreenLoading
 		m.loadingMessage = "Fetching branches and commits..."
-		return m, fetchCommitsCmd(m.repoInfo, m.prType, m.dryRun)
+		return m, fetchCommitsCmd(m.repoInfo, m.prType, m.config.TicketRegex(), m.dryRun)
 	}
 }
 
@@ -378,7 +374,7 @@ func (m Model) confirmAction() (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case ScreenConfirmation:
 		m.screen = ScreenCreating
-		return m, createPRCmd(m.repoInfo, m.prType, m.prTitle, m.tickets, m.dryRun)
+		return m, createPRCmd(m.repoInfo, m.prType, m.prTitle, m.tickets, m.config.Tickets.LinearOrg, m.dryRun)
 	case ScreenBatchConfirmation:
 		// Block if no repos have commits
 		if m.batchReposWithCommits == 0 {
