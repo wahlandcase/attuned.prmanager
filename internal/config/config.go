@@ -112,6 +112,11 @@ func (c *Config) Save() error {
 		return err
 	}
 
+	// Ensure config directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
 	data, err := toml.Marshal(c)
 	if err != nil {
 		return err

@@ -54,7 +54,9 @@ attpr --dry-run    # Test without GitHub access
 
 ## Configuration
 
-Config is created on first run at `~/.config/attpr.toml`:
+Config is created on first run:
+- **Linux**: `~/.config/attpr.toml`
+- **macOS**: `~/Library/Application Support/attpr.toml`
 
 ```toml
 [paths]
