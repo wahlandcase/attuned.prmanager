@@ -54,7 +54,7 @@ attpr --dry-run    # Test without GitHub access
 
 ## Configuration
 
-Config is created on first run at `~/.config/attuned-release.toml`:
+Config is created on first run at `~/.config/attpr.toml`:
 
 ```toml
 [paths]

@@ -48,7 +48,7 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "attuned-release.toml"), nil
+	return filepath.Join(configDir, "attpr.toml"), nil
 }
 
 func Load() (*Config, error) {
