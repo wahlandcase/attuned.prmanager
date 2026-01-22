@@ -90,31 +90,36 @@ func downloadUpdateCmd(release *update.Release, repo string) tea.Cmd {
 	}
 }
 
+type configOpenedMsg struct{}
+
 // openConfigCmd opens the config file in the user's editor
 func openConfigCmd() tea.Cmd {
-	return func() tea.Msg {
-		configPath, err := config.Path()
-		if err != nil {
-			return nil
-		}
-
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = os.Getenv("VISUAL")
-		}
-		if editor == "" {
-			// Fallback based on OS
-			if runtime.GOOS == "darwin" {
-				editor = "open"
-			} else {
-				editor = "xdg-open"
-			}
-		}
-
-		cmd := exec.Command(editor, configPath)
-		cmd.Start()
+	configPath, err := config.Path()
+	if err != nil {
 		return nil
 	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		// Fallback to common editors
+		for _, e := range []string{"vim", "nano", "vi"} {
+			if _, err := exec.LookPath(e); err == nil {
+				editor = e
+				break
+			}
+		}
+	}
+	if editor == "" {
+		return nil
+	}
+
+	cmd := exec.Command(editor, configPath)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return configOpenedMsg{}
+	})
 }
 
 type batchCommitsResult struct {
