@@ -2060,8 +2060,13 @@ func (m Model) renderStatusBar() string {
 		hints = []string{}
 	}
 
-	// Don't render an empty box if there are no hints
-	if len(hints) == 0 && m.copyFeedback == "" {
+	installedVersion := ""
+	if m.version != "" {
+		installedVersion = update.VersionDisplay(m.version)
+	}
+
+	// Don't render an empty box if there are no hints or version
+	if len(hints) == 0 && m.copyFeedback == "" && installedVersion == "" {
 		return ""
 	}
 
@@ -2070,7 +2075,9 @@ func (m Model) renderStatusBar() string {
 		BorderForeground(ui.ColorDarkGray).
 		Padding(0, 1)
 
-	content := strings.Join(hints, "  ")
+	var contentLines []string
+
+	hotkeysLine := strings.Join(hints, "  ")
 
 	// Add copy feedback if present
 	if m.copyFeedback != "" {
@@ -2078,13 +2085,35 @@ func (m Model) renderStatusBar() string {
 		if strings.HasPrefix(m.copyFeedback, "✗") {
 			feedbackStyle = lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
 		}
-		if content != "" {
-			content += "  │  "
+		if hotkeysLine != "" {
+			hotkeysLine += "  │  "
 		}
-		content += feedbackStyle.Render(m.copyFeedback)
+		hotkeysLine += feedbackStyle.Render(m.copyFeedback)
 	}
 
-	return borderStyle.Render(content)
+	if hotkeysLine != "" {
+		contentLines = append(contentLines, hotkeysLine)
+	}
+
+	if installedVersion != "" {
+		versionStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		versionLine := fmt.Sprintf("Version: %s", installedVersion)
+		if m.updateCheckInProgress {
+			spinnerStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+			versionLine = fmt.Sprintf("%s  •  Checking updates %s", versionLine, spinnerStyle.Render(ui.Spinner(m.spinnerFrame)))
+		}
+
+		targetWidth := lipgloss.Width(hotkeysLine)
+		if w := lipgloss.Width(versionLine); w > targetWidth {
+			targetWidth = w
+		}
+		if targetWidth > 0 {
+			versionLine = lipgloss.PlaceHorizontal(targetWidth, lipgloss.Center, versionLine)
+		}
+		contentLines = append(contentLines, versionStyle.Render(versionLine))
+	}
+
+	return borderStyle.Render(strings.Join(contentLines, "\n"))
 }
 
 // ptrEqual compares two string pointers for equality
@@ -2097,4 +2126,3 @@ func ptrEqual(a, b *string) bool {
 	}
 	return *a == *b
 }
-

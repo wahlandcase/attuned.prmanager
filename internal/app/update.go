@@ -155,6 +155,10 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.selectMainMenuItem()
 	case "u":
 		// Manual update check
+		if m.updateCheckInProgress {
+			return m, nil
+		}
+		m.updateCheckInProgress = true
 		return m, checkUpdateCmd(m.version, m.config.Update.Repo)
 	case "c":
 		// Open config in editor
@@ -953,6 +957,8 @@ func (m Model) handleMergeSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleUpdateCheckResult(msg updateCheckResult) (tea.Model, tea.Cmd) {
+	m.updateCheckInProgress = false
+
 	// Record that we checked (regardless of result)
 	m.config.RecordUpdateCheck()
 	_ = m.config.Save()

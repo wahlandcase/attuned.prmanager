@@ -87,9 +87,10 @@ type Model struct {
 	authError        error  // Non-nil if gh auth check failed
 
 	// Update state
-	version         string          // Current app version
-	updateAvailable *update.Release // Non-nil if update available
-	updateSelection int             // 0=Update now, 1=Skip, 2=Skip this version
+	version               string          // Current app version
+	updateAvailable       *update.Release // Non-nil if update available
+	updateSelection       int             // 0=Update now, 1=Skip, 2=Skip this version
+	updateCheckInProgress bool            // True while checking for updates (manual)
 
 	// Animation state
 	confetti      []ConfettiParticle
