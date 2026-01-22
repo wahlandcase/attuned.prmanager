@@ -1954,6 +1954,7 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("1-4", "Select", ui.ColorYellow),
 			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
+			ui.KeyBinding("u", "Update", ui.ColorCyan),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
 	case ScreenPrTypeSelect:

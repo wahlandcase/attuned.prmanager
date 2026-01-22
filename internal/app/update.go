@@ -153,6 +153,9 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "4":
 		m.menuIndex = 3
 		return m.selectMainMenuItem()
+	case "u":
+		// Manual update check
+		return m, checkUpdateCmd(m.version, m.config.Update.Repo)
 	}
 	return m, nil
 }
