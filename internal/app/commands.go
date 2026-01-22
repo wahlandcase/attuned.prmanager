@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -90,36 +91,38 @@ func downloadUpdateCmd(release *update.Release, repo string) tea.Cmd {
 	}
 }
 
-type configOpenedMsg struct{}
-
-// openConfigCmd opens the config file in the user's editor
+// openConfigCmd opens the config folder in the system file manager
 func openConfigCmd() tea.Cmd {
-	configPath, err := config.Path()
-	if err != nil {
-		return nil
-	}
+	return func() tea.Msg {
+		configPath, err := config.Path()
+		if err != nil {
+			return nil
+		}
+		configDir := filepath.Dir(configPath)
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = os.Getenv("VISUAL")
-	}
-	if editor == "" {
-		// Fallback to common editors
-		for _, e := range []string{"vim", "nano", "vi"} {
-			if _, err := exec.LookPath(e); err == nil {
-				editor = e
-				break
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			// macOS: open folder in Finder, select the file
+			cmd = exec.Command("open", "-R", configPath)
+		case "linux":
+			// Check if WSL
+			if isWSL() {
+				// Convert Linux path to Windows path and open in Explorer
+				winPath, err := exec.Command("wslpath", "-w", configDir).Output()
+				if err == nil {
+					cmd = exec.Command("explorer.exe", strings.TrimSpace(string(winPath)))
+				}
+			} else {
+				cmd = exec.Command("xdg-open", configDir)
 			}
 		}
-	}
-	if editor == "" {
+
+		if cmd != nil {
+			cmd.Start()
+		}
 		return nil
 	}
-
-	cmd := exec.Command(editor, configPath)
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return configOpenedMsg{}
-	})
 }
 
 type batchCommitsResult struct {
