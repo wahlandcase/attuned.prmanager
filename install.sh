@@ -20,13 +20,9 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-# Install location
-if [ "$OS" = "darwin" ]; then
-  INSTALL_DIR="/usr/local/bin"
-else
-  INSTALL_DIR="$HOME/.local/bin"
-  mkdir -p "$INSTALL_DIR"
-fi
+# Install location - use ~/.local/bin for both (no sudo needed for updates)
+INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
 
 # Get latest version
 echo "Fetching latest release..."
@@ -45,12 +41,7 @@ curl -fsSL "$URL" -o "/tmp/$BINARY"
 chmod +x "/tmp/$BINARY"
 
 # Install
-if [ "$OS" = "darwin" ] && [ ! -w "$INSTALL_DIR" ]; then
-  echo "Installing to $INSTALL_DIR (requires sudo)..."
-  sudo mv "/tmp/$BINARY" "$INSTALL_DIR/$BINARY"
-else
-  mv "/tmp/$BINARY" "$INSTALL_DIR/$BINARY"
-fi
+mv "/tmp/$BINARY" "$INSTALL_DIR/$BINARY"
 
 echo "Installed $BINARY $VERSION to $INSTALL_DIR/$BINARY"
 
