@@ -2,6 +2,8 @@
 
 TUI for creating and managing GitHub release PRs across multiple repositories.
 
+https://github.com/user-attachments/assets/f6b93fa7-643f-49ad-b3aa-c249e6534c21
+
 ## Install
 
 ### Prerequisites
