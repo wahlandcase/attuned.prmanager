@@ -25,8 +25,9 @@ type ConfettiParticle struct {
 // Model is the main application state
 type Model struct {
 	// Configuration
-	config *config.Config
-	dryRun bool
+	config     *config.Config
+	dryRun     bool
+	testUpdate bool
 
 	// Navigation
 	screen       Screen
@@ -107,15 +108,16 @@ type OpenPREntry struct {
 }
 
 // New creates a new application model
-func New(cfg *config.Config, dryRun bool, version string) Model {
+func New(cfg *config.Config, dryRun, testUpdate bool, version string) Model {
 	return Model{
-		config:    cfg,
-		dryRun:    dryRun,
-		version:   version,
-		screen:    ScreenMainMenu,
-		menuIndex: 0,
-		width:     80,
-		height:    24,
+		config:     cfg,
+		dryRun:     dryRun,
+		testUpdate: testUpdate,
+		version:    version,
+		screen:     ScreenMainMenu,
+		menuIndex:  0,
+		width:      80,
+		height:     24,
 	}
 }
 
@@ -131,6 +133,12 @@ func (m Model) Init() tea.Cmd {
 		if m.config.ShouldCheckForUpdate() {
 			cmds = append(cmds, checkUpdateCmd(m.version, m.config.Update.Repo))
 		}
+	}
+	// Test update flag shows fake update prompt
+	if m.testUpdate {
+		cmds = append(cmds, func() tea.Msg {
+			return updateCheckResult{release: &update.Release{TagName: "v99.0.0"}}
+		})
 	}
 	return tea.Batch(cmds...)
 }

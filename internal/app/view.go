@@ -1885,7 +1885,7 @@ func (m Model) renderUpdatePrompt() string {
 	lines = append(lines, "   What would you like to do?")
 	lines = append(lines, "")
 
-	// Option buttons
+	// Option buttons - fixed width for alignment
 	options := []struct {
 		key   string
 		label string
@@ -1898,24 +1898,23 @@ func (m Model) renderUpdatePrompt() string {
 
 	var buttons []string
 	for i, opt := range options {
+		text := fmt.Sprintf("[%s] %s", opt.key, opt.label)
 		var style lipgloss.Style
 		if i == m.updateSelection {
 			style = lipgloss.NewStyle().
 				Background(opt.color).
 				Foreground(lipgloss.Color("#000000")).
-				Padding(0, 2).
+				Padding(0, 1).
 				Bold(true)
 		} else {
 			style = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(opt.color).
 				Foreground(opt.color).
 				Padding(0, 1)
 		}
-		buttons = append(buttons, style.Render(fmt.Sprintf("[%s] %s", opt.key, opt.label)))
+		buttons = append(buttons, style.Render(text))
 	}
 
-	lines = append(lines, "   "+strings.Join(buttons, "  "))
+	lines = append(lines, "   "+strings.Join(buttons, "   "))
 	lines = append(lines, "")
 
 	return strings.Join(lines, "\n")

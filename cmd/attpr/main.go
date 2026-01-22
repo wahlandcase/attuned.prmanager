@@ -17,7 +17,10 @@ import (
 // Version is set at build time via -ldflags "-X main.Version=vX.X.X"
 var Version = "dev"
 
-var dryRun bool
+var (
+	dryRun     bool
+	testUpdate bool
+)
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -27,6 +30,8 @@ func main() {
 	}
 
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate operations without making changes")
+	rootCmd.Flags().BoolVar(&testUpdate, "test-update", false, "Show update prompt for testing")
+	rootCmd.Flags().MarkHidden("test-update")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -40,7 +45,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	model := app.New(cfg, dryRun, Version)
+	model := app.New(cfg, dryRun, testUpdate, Version)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

@@ -51,6 +51,7 @@ attpr --dry-run    # Test without GitHub access
 - **Batch PR**: Create release PRs across multiple repos at once
 - **View/Merge PRs**: See open release PRs and merge them
 - **Ticket Extraction**: Automatically extracts ticket IDs from commit messages
+- **Auto-Update**: Checks for updates on startup and prompts to install
 
 ## Configuration
 
@@ -70,6 +71,14 @@ backend_glob = "backend/*"
 [tickets]
 # Regex pattern for extracting ticket IDs from commits
 pattern = "PROJ-[0-9]+"
+# Linear organization slug (for PR body links)
+linear_org = "my-org"
+
+[update]
+# Auto-update settings
+enabled = true
+# Skipped version (set automatically when you skip a version)
+skipped_version = ""
 ```
 
 ### Example Directory Structure
