@@ -156,6 +156,9 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		// Manual update check
 		return m, checkUpdateCmd(m.version, m.config.Update.Repo)
+	case "c":
+		// Open config in editor
+		return m, openConfigCmd()
 	}
 	return m, nil
 }

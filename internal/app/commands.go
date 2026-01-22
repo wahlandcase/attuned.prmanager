@@ -90,6 +90,33 @@ func downloadUpdateCmd(release *update.Release, repo string) tea.Cmd {
 	}
 }
 
+// openConfigCmd opens the config file in the user's editor
+func openConfigCmd() tea.Cmd {
+	return func() tea.Msg {
+		configPath, err := config.Path()
+		if err != nil {
+			return nil
+		}
+
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = os.Getenv("VISUAL")
+		}
+		if editor == "" {
+			// Fallback based on OS
+			if runtime.GOOS == "darwin" {
+				editor = "open"
+			} else {
+				editor = "xdg-open"
+			}
+		}
+
+		cmd := exec.Command(editor, configPath)
+		cmd.Start()
+		return nil
+	}
+}
+
 type batchCommitsResult struct {
 	tickets          []string
 	existingPRs      int // Count of repos with existing PRs

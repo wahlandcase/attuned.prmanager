@@ -64,6 +64,11 @@ func configPath() (string, error) {
 	return filepath.Join(configDir, "attpr.toml"), nil
 }
 
+// Path returns the config file path
+func Path() (string, error) {
+	return configPath()
+}
+
 func Load() (*Config, error) {
 	path, err := configPath()
 	if err != nil {
