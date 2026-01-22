@@ -66,6 +66,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case currentRepoLoadedResult:
 		return m.handleCurrentRepoLoaded(msg)
+
+	case authCheckResult:
+		m.authError = msg.err
+		return m, nil
+
+	case updateCheckResult:
+		return m.handleUpdateCheckResult(msg)
+
+	case updateDownloadResult:
+		return m.handleUpdateDownloadResult(msg)
 	}
 
 	return m, nil
@@ -105,6 +115,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleViewOpenPrsKey(msg)
 	case ScreenMergeSummary:
 		return m.handleMergeSummaryKey(msg)
+	case ScreenUpdatePrompt:
+		return m.handleUpdatePromptKey(msg)
 	}
 
 	return m, nil
@@ -146,6 +158,13 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) selectMainMenuItem() (tea.Model, tea.Cmd) {
+	// Check for auth error before any GitHub operation (except Quit)
+	if m.authError != nil && m.menuIndex != 3 {
+		m.screen = ScreenError
+		m.errorMessage = m.authError.Error()
+		return m, nil
+	}
+
 	switch m.menuIndex {
 	case 0: // Single Repo
 		mode := ModeSingle
@@ -927,6 +946,102 @@ func (m Model) handleMergeSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleUpdateCheckResult(msg updateCheckResult) (tea.Model, tea.Cmd) {
+	// Record that we checked (regardless of result)
+	m.config.RecordUpdateCheck()
+	_ = m.config.Save()
+
+	if msg.err != nil {
+		// Silently ignore update check errors
+		return m, nil
+	}
+
+	if msg.release == nil {
+		// No update available
+		return m, nil
+	}
+
+	// Check if this version was skipped
+	if m.config.Update.SkippedVersion == msg.release.TagName {
+		return m, nil
+	}
+
+	// Only show update prompt if user is still on main menu
+	// (don't interrupt if they've started navigating)
+	if m.screen != ScreenMainMenu {
+		return m, nil
+	}
+
+	// Update available - show prompt
+	m.updateAvailable = msg.release
+	m.screen = ScreenUpdatePrompt
+	m.updateSelection = 0
+	return m, nil
+}
+
+func (m Model) handleUpdateDownloadResult(msg updateDownloadResult) (tea.Model, tea.Cmd) {
+	if !msg.success {
+		m.errorMessage = fmt.Sprintf("Update failed: %v", msg.err)
+		m.screen = ScreenError
+		return m, nil
+	}
+
+	// Update successful - quit so user restarts with new version
+	m.shouldQuit = true
+	// Return a quit command with a message
+	return m, tea.Sequence(
+		tea.Printf("\nUpdated to %s! Run attpr again.\n", msg.version),
+		tea.Quit,
+	)
+}
+
+func (m Model) handleUpdatePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "left", "h":
+		if m.updateSelection > 0 {
+			m.updateSelection--
+		}
+	case "right", "l":
+		if m.updateSelection < 2 {
+			m.updateSelection++
+		}
+	case "y", "1":
+		m.updateSelection = 0
+		return m.executeUpdateSelection()
+	case "n", "2":
+		m.updateSelection = 1
+		return m.executeUpdateSelection()
+	case "s", "3":
+		m.updateSelection = 2
+		return m.executeUpdateSelection()
+	case "enter":
+		return m.executeUpdateSelection()
+	case "q", "esc":
+		m.updateAvailable = nil
+		m.screen = ScreenMainMenu
+	}
+	return m, nil
+}
+
+func (m Model) executeUpdateSelection() (tea.Model, tea.Cmd) {
+	switch m.updateSelection {
+	case 0: // Update now
+		m.screen = ScreenUpdating
+		return m, downloadUpdateCmd(m.updateAvailable, m.config.Update.Repo)
+	case 1: // Skip for now
+		m.updateAvailable = nil
+		m.screen = ScreenMainMenu
+	case 2: // Skip this version
+		if m.updateAvailable != nil {
+			m.config.Update.SkippedVersion = m.updateAvailable.TagName
+			_ = m.config.Save()
+		}
+		m.updateAvailable = nil
+		m.screen = ScreenMainMenu
+	}
+	return m, nil
+}
+
 func (m Model) reset() (tea.Model, tea.Cmd) {
 	// Cancel any background fetches and close channel
 	m.cancelBatchFetch()
@@ -951,6 +1066,9 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	m.mergeSelected = nil
 	m.mergeResults = nil
 	m.confirmSelection = 0
+	// Reset update state
+	m.updateAvailable = nil
+	m.updateSelection = 0
 	// Reset animation state
 	m.confetti = nil
 	m.typewriterPos = 0

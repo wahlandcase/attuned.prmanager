@@ -264,21 +264,3 @@ func findNestedRepos(parentPath, subdir, parentName string) []models.RepoInfo {
 
 	return nested
 }
-
-// HasBranch checks if a branch exists in the repository
-func HasBranch(repoPath, branchName string) bool {
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return false
-	}
-
-	// Check remote ref first
-	_, err = repo.Reference(plumbing.NewRemoteReferenceName("origin", branchName), true)
-	if err == nil {
-		return true
-	}
-
-	// Check local ref
-	_, err = repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
-	return err == nil
-}

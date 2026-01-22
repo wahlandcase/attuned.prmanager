@@ -21,6 +21,8 @@ const (
 	ScreenMergeConfirmation
 	ScreenMerging
 	ScreenMergeSummary
+	ScreenUpdatePrompt
+	ScreenUpdating
 )
 
 func (s Screen) String() string {
@@ -42,6 +44,8 @@ func (s Screen) String() string {
 		"MergeConfirmation",
 		"Merging",
 		"MergeSummary",
+		"UpdatePrompt",
+		"Updating",
 	}
 	if int(s) < len(names) {
 		return names[s]

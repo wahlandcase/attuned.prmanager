@@ -8,6 +8,7 @@ import (
 
 	"github.com/wahlandcase/attuned.prmanager/internal/models"
 	"github.com/wahlandcase/attuned.prmanager/internal/ui"
+	"github.com/wahlandcase/attuned.prmanager/internal/update"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -110,6 +111,10 @@ func (m Model) renderContentWithHeight(availableHeight int) string {
 		return m.renderMerging()
 	case ScreenMergeSummary:
 		return m.renderMergeSummaryWithHeight(availableHeight)
+	case ScreenUpdatePrompt:
+		return m.renderUpdatePrompt()
+	case ScreenUpdating:
+		return m.renderUpdating()
 	default:
 		return ""
 	}
@@ -1861,6 +1866,86 @@ func (m Model) renderMergeSummaryWithHeight(availableHeight int) string {
 	return ui.ColumnBox(content, " Merge Summary ", headerColor, true, boxWidth, availableHeight)
 }
 
+func (m Model) renderUpdatePrompt() string {
+	var lines []string
+
+	lines = append(lines, "")
+	lines = append(lines, ui.SectionHeader("Update Available!", ui.ColorCyan))
+	lines = append(lines, "")
+
+	if m.updateAvailable != nil {
+		versionStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+		currentStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
+
+		lines = append(lines, fmt.Sprintf("   Current version: %s", currentStyle.Render(m.version)))
+		lines = append(lines, fmt.Sprintf("   New version:     %s", versionStyle.Render(update.VersionDisplay(m.updateAvailable.TagName))))
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "   What would you like to do?")
+	lines = append(lines, "")
+
+	// Option buttons
+	options := []struct {
+		key   string
+		label string
+		color lipgloss.Color
+	}{
+		{"y", "Update now", ui.ColorGreen},
+		{"n", "Skip for now", ui.ColorYellow},
+		{"s", "Skip this version", ui.ColorRed},
+	}
+
+	var buttons []string
+	for i, opt := range options {
+		var style lipgloss.Style
+		if i == m.updateSelection {
+			style = lipgloss.NewStyle().
+				Background(opt.color).
+				Foreground(lipgloss.Color("#000000")).
+				Padding(0, 2).
+				Bold(true)
+		} else {
+			style = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(opt.color).
+				Foreground(opt.color).
+				Padding(0, 1)
+		}
+		buttons = append(buttons, style.Render(fmt.Sprintf("[%s] %s", opt.key, opt.label)))
+	}
+
+	lines = append(lines, "   "+strings.Join(buttons, "  "))
+	lines = append(lines, "")
+
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderUpdating() string {
+	var lines []string
+
+	lines = append(lines, "")
+	lines = append(lines, ui.SectionHeader("Updating...", ui.ColorCyan))
+	lines = append(lines, "")
+
+	spinner := ui.Spinner(m.spinnerFrame)
+	spinnerStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+	statusStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
+
+	lines = append(lines, fmt.Sprintf("   %s %s",
+		spinnerStyle.Render(spinner),
+		statusStyle.Render("Downloading and installing update..."),
+	))
+	lines = append(lines, "")
+
+	if m.updateAvailable != nil {
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("   Installing version %s", update.VersionDisplay(m.updateAvailable.TagName))))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func (m Model) renderStatusBar() string {
 	var hints []string
 
@@ -1952,6 +2037,16 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
+	case ScreenUpdatePrompt:
+		hints = []string{
+			ui.KeyBinding("←→", "Select", ui.ColorWhite),
+			ui.KeyBinding("y", "Update", ui.ColorGreen),
+			ui.KeyBinding("n", "Skip", ui.ColorYellow),
+			ui.KeyBinding("s", "Skip version", ui.ColorRed),
+			ui.KeyBinding("Enter", "Confirm", ui.ColorGreen),
+		}
+	case ScreenUpdating:
+		hints = []string{}
 	default:
 		hints = []string{}
 	}

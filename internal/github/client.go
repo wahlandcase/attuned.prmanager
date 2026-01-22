@@ -29,9 +29,9 @@ func GetExistingPR(repoPath, headBranch, baseBranch string) (*models.GhPr, error
 	)
 	cmd.Dir = repoPath
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("gh pr list failed: %w", err)
+		return nil, fmt.Errorf("gh pr list failed: %s", string(output))
 	}
 
 	var prs []models.GhPr

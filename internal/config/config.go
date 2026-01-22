@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -13,9 +14,17 @@ import (
 type Config struct {
 	Paths   PathsConfig   `toml:"paths"`
 	Tickets TicketsConfig `toml:"tickets"`
+	Update  UpdateConfig  `toml:"update"`
 
 	// Compiled regex from Tickets.Pattern (not serialized)
 	ticketRegex *regexp.Regexp
+}
+
+type UpdateConfig struct {
+	Enabled        bool      `toml:"enabled"`
+	LastCheck      time.Time `toml:"last_check"`
+	SkippedVersion string    `toml:"skipped_version"`
+	Repo           string    `toml:"repo"`
 }
 
 type PathsConfig struct {
@@ -39,6 +48,10 @@ func DefaultConfig() *Config {
 		Tickets: TicketsConfig{
 			Pattern:   "ATT-[0-9]+",
 			LinearOrg: "attuned",
+		},
+		Update: UpdateConfig{
+			Enabled: true,
+			Repo:    "wahlandcase/attuned.prmanager",
 		},
 	}
 }
@@ -127,6 +140,19 @@ func (c *Config) Save() error {
 
 func (c *Config) AttunedPath() string {
 	return expandTilde(c.Paths.AttunedDir)
+}
+
+// ShouldCheckForUpdate returns true if update check is enabled and 24h since last check
+func (c *Config) ShouldCheckForUpdate() bool {
+	if !c.Update.Enabled {
+		return false
+	}
+	return time.Since(c.Update.LastCheck) > 24*time.Hour
+}
+
+// RecordUpdateCheck updates the last check time
+func (c *Config) RecordUpdateCheck() {
+	c.Update.LastCheck = time.Now()
 }
 
 func expandTilde(path string) string {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"github.com/wahlandcase/attuned.prmanager/internal/git"
 	"github.com/wahlandcase/attuned.prmanager/internal/github"
 	"github.com/wahlandcase/attuned.prmanager/internal/models"
+	"github.com/wahlandcase/attuned.prmanager/internal/update"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -43,6 +45,49 @@ type openPRsFetchedResult struct {
 
 type mergeCompleteResult struct {
 	result models.MergeResult
+}
+
+type authCheckResult struct {
+	err error
+}
+
+// authCheckCmd runs gh auth check in the background
+func authCheckCmd() tea.Cmd {
+	return func() tea.Msg {
+		err := github.CheckAuth()
+		return authCheckResult{err: err}
+	}
+}
+
+// Update check messages
+type updateCheckResult struct {
+	release *update.Release
+	err     error
+}
+
+type updateDownloadResult struct {
+	success bool
+	version string
+	err     error
+}
+
+// checkUpdateCmd checks for available updates
+func checkUpdateCmd(currentVersion, repo string) tea.Cmd {
+	return func() tea.Msg {
+		release, err := update.CheckForUpdate(currentVersion, repo)
+		return updateCheckResult{release: release, err: err}
+	}
+}
+
+// downloadUpdateCmd downloads and installs an update
+func downloadUpdateCmd(release *update.Release, repo string) tea.Cmd {
+	return func() tea.Msg {
+		err := update.DownloadAndInstall(release, repo)
+		if err != nil {
+			return updateDownloadResult{success: false, err: err}
+		}
+		return updateDownloadResult{success: true, version: update.VersionDisplay(release.TagName)}
+	}
 }
 
 type batchCommitsResult struct {
@@ -310,7 +355,7 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 
 				status, err := github.GetOpenReleasePRs(r.Path, r.MainBranch)
 				if err != nil {
-					results <- result{err: err}
+					results <- result{err: fmt.Errorf("%s: %w", r.DisplayName, err)}
 					return
 				}
 				hasAny := status.DevToStaging != nil || status.StagingToMain != nil
@@ -329,10 +374,11 @@ func fetchOpenPRsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
 		}()
 
 		// Collect results, filtering to only repos with open PRs
+		// Skip repos that error (e.g., no remotes) instead of failing entirely
 		var entries []OpenPREntry
 		for res := range results {
 			if res.err != nil {
-				return openPRsFetchedResult{err: res.err}
+				continue // Skip problematic repos
 			}
 			if res.hasAny {
 				entries = append(entries, res.entry)
@@ -870,9 +916,4 @@ func openURLs(urls []string) {
 	for _, url := range urls {
 		_ = openURL(url)
 	}
-}
-
-// copyURLs copies multiple URLs to the clipboard (one per line)
-func copyURLs(urls []string) error {
-	return copyToClipboard(strings.Join(urls, "\n"))
 }

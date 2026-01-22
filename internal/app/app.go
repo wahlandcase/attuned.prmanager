@@ -8,6 +8,7 @@ import (
 	"github.com/wahlandcase/attuned.prmanager/internal/config"
 	"github.com/wahlandcase/attuned.prmanager/internal/models"
 	"github.com/wahlandcase/attuned.prmanager/internal/ui"
+	"github.com/wahlandcase/attuned.prmanager/internal/update"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -82,6 +83,12 @@ type Model struct {
 	loadingMessage   string
 	spinnerFrame     int
 	copyFeedback     string // Brief "Copied!" message, clears on next action
+	authError        error  // Non-nil if gh auth check failed
+
+	// Update state
+	version         string          // Current app version
+	updateAvailable *update.Release // Non-nil if update available
+	updateSelection int             // 0=Update now, 1=Skip, 2=Skip this version
 
 	// Animation state
 	confetti      []ConfettiParticle
@@ -100,23 +107,32 @@ type OpenPREntry struct {
 }
 
 // New creates a new application model
-func New(cfg *config.Config, dryRun bool) Model {
+func New(cfg *config.Config, dryRun bool, version string) Model {
 	return Model{
-		config:     cfg,
-		dryRun:     dryRun,
-		screen:     ScreenMainMenu,
-		menuIndex:  0,
-		width:      80,
-		height:     24,
+		config:    cfg,
+		dryRun:    dryRun,
+		version:   version,
+		screen:    ScreenMainMenu,
+		menuIndex: 0,
+		width:     80,
+		height:    24,
 	}
 }
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tea.EnterAltScreen,
 		tickCmd(),
-	)
+	}
+	if !m.dryRun {
+		cmds = append(cmds, authCheckCmd())
+		// Check for updates if enabled and 24h since last check
+		if m.config.ShouldCheckForUpdate() {
+			cmds = append(cmds, checkUpdateCmd(m.version, m.config.Update.Repo))
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 // tickMsg is sent on each tick for animations
