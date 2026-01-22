@@ -6,26 +6,25 @@ TUI for creating and managing GitHub release PRs across multiple repositories.
 
 ### Prerequisites
 
-- [Go 1.22+](https://go.dev/doc/install)
 - [GitHub CLI](https://cli.github.com/) (`gh`) authenticated
 
 ### Quick Install
 
 ```bash
-go install github.com/wahlandcase/attuned.prmanager/cmd/attpr@latest
+curl -fsSL https://raw.githubusercontent.com/wahlandcase/attuned.prmanager/main/install.sh | bash
 ```
 
-This installs to `$GOPATH/bin` (usually `~/go/bin`). Make sure it's in your PATH.
+This installs to `~/.local/bin` (Linux) or `/usr/local/bin` (macOS).
 
 ### From Source
+
+Requires [Go 1.22+](https://go.dev/doc/install).
 
 ```bash
 git clone https://github.com/wahlandcase/attuned.prmanager.git
 cd attuned.prmanager
 go build -o ~/.local/bin/attpr ./cmd/attpr
 ```
-
-Make sure `~/.local/bin` is in your PATH.
 
 ## Usage
 
