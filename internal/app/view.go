@@ -13,8 +13,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Fixed width for stable layout (prevents UI shifting)
-const fixedContentWidth = 120
+// Max content width for stable layout (prevents UI shifting)
+const maxContentWidth = 120
+
+// contentWidth returns the usable content width, adapting to terminal size
+func (m Model) contentWidth() int {
+	if m.width < maxContentWidth+4 {
+		return m.width - 4 // leave some margin
+	}
+	return maxContentWidth
+}
 
 // View renders the application
 func (m Model) View() string {
@@ -42,7 +50,7 @@ func (m Model) View() string {
 	sections = append(sections, "")
 
 	// Use fixed content width for stable layout
-	contentWidth := fixedContentWidth
+	contentWidth := m.contentWidth()
 
 	// Screens that manage their own full layout (no outer box)
 	fullLayoutScreens := m.screen == ScreenLoading ||
@@ -270,7 +278,7 @@ func (m Model) renderLoadingWithMessage(message string) string {
 	loadingText := fmt.Sprintf("%s %s", spinnerStyle.Render(spinner), textStyle.Render(message))
 
 	// Center the text within the box
-	innerWidth := fixedContentWidth - 6
+	innerWidth := m.contentWidth() - 6
 	centeredStyle := lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Center)
 
 	var lines []string
@@ -286,7 +294,7 @@ func (m Model) renderLoadingWithMessage(message string) string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.ColorPurple).
-		Width(fixedContentWidth).
+		Width(m.contentWidth()).
 		Padding(1, 2)
 
 	return boxStyle.Render(content)
@@ -294,7 +302,7 @@ func (m Model) renderLoadingWithMessage(message string) string {
 
 func (m Model) renderCommitReviewWithHeight(availableHeight int) string {
 	// Fixed column sizing for stable layout
-	columnWidth := (fixedContentWidth - 6) / 2
+	columnWidth := (m.contentWidth() - 6) / 2
 	panelHeight := availableHeight - 2
 	if panelHeight < 10 {
 		panelHeight = 10
@@ -883,7 +891,7 @@ func (m Model) renderBatchRepoSelectWithHeight(availableHeight int) string {
 	}
 
 	// Fixed column width for stable layout
-	columnWidth := (fixedContentWidth - 6) / 2
+	columnWidth := (m.contentWidth() - 6) / 2
 
 	// Reserve space for commits panel (5 lines) + filter box (4 lines) + gaps (4)
 	commitsHeight := 5
@@ -1630,7 +1638,7 @@ func (m Model) renderBatchSummaryWithHeight(availableHeight int) string {
 	content := strings.Join(lines, "\n")
 
 	// Fixed box width for stable layout
-	boxWidth := fixedContentWidth - 10
+	boxWidth := m.contentWidth() - 10
 
 	return ui.ColumnBox(content, " Batch Summary ", ui.ColorGreen, true, boxWidth, availableHeight)
 }
@@ -1644,7 +1652,7 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 		subText := dimStyle.Render("All repositories are up to date!")
 
 		// Center the text
-		centeredStyle := lipgloss.NewStyle().Width(fixedContentWidth).Align(lipgloss.Center)
+		centeredStyle := lipgloss.NewStyle().Width(m.contentWidth()).Align(lipgloss.Center)
 
 		var lines []string
 		lines = append(lines, "")
@@ -1657,7 +1665,7 @@ func (m Model) renderViewOpenPrsWithHeight(availableHeight int) string {
 	}
 
 	// Fixed column dimensions for stable layout (same as batch select)
-	columnWidth := (fixedContentWidth - 6) / 2
+	columnWidth := (m.contentWidth() - 6) / 2
 
 	// Column height calculation
 	columnHeight := availableHeight - 8
@@ -1861,7 +1869,7 @@ func (m Model) renderMergeSummaryWithHeight(availableHeight int) string {
 	content := strings.Join(lines, "\n")
 
 	// Fixed box width for stable layout
-	boxWidth := fixedContentWidth - 10
+	boxWidth := m.contentWidth() - 10
 
 	return ui.ColumnBox(content, " Merge Summary ", headerColor, true, boxWidth, availableHeight)
 }
