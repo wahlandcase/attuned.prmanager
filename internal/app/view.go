@@ -2001,6 +2001,7 @@ func (m Model) renderStatusBar() string {
 		hints = []string{
 			ui.KeyBinding("o", "Open URL", ui.ColorBlue),
 			ui.KeyBinding("c", "Copy URL", ui.ColorBlue),
+			ui.KeyBinding("m", "Merge PRs", ui.ColorGreen),
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 		}
 	case ScreenBatchRepoSelect:
@@ -2036,6 +2037,7 @@ func (m Model) renderStatusBar() string {
 		hints = []string{
 			ui.KeyBinding("o", "Open URLs", ui.ColorBlue),
 			ui.KeyBinding("c", "Copy URLs", ui.ColorBlue),
+			ui.KeyBinding("m", "Merge PRs", ui.ColorGreen),
 			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
 			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
