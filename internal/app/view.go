@@ -123,6 +123,8 @@ func (m Model) renderContentWithHeight(availableHeight int) string {
 		return m.renderUpdatePrompt()
 	case ScreenUpdating:
 		return m.renderUpdating()
+	case ScreenSessionHistory:
+		return m.renderSessionHistory()
 	default:
 		return ""
 	}
@@ -1953,6 +1955,46 @@ func (m Model) renderUpdating() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) renderSessionHistory() string {
+	var lines []string
+	lines = append(lines, "")
+
+	if len(m.sessionPRs) == 0 {
+		dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+		lines = append(lines, dimStyle.Render("  No PRs created this session"))
+		lines = append(lines, "")
+	} else {
+		for i, pr := range m.sessionPRs {
+			isSelected := i == m.historyIndex
+			arrow := "  "
+			if isSelected {
+				arrow = "▶ "
+			}
+
+			var repoStyle, typeStyle, urlStyle, arrowStyle lipgloss.Style
+			if isSelected {
+				repoStyle = lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true).Background(ui.ColorDarkGray)
+				typeStyle = lipgloss.NewStyle().Foreground(ui.ColorYellow).Background(ui.ColorDarkGray)
+				urlStyle = lipgloss.NewStyle().Foreground(ui.ColorWhite).Background(ui.ColorDarkGray)
+				arrowStyle = lipgloss.NewStyle().Foreground(ui.ColorCyan).Background(ui.ColorDarkGray)
+			} else {
+				repoStyle = lipgloss.NewStyle().Foreground(ui.ColorCyan).Bold(true)
+				typeStyle = lipgloss.NewStyle().Foreground(ui.ColorYellow)
+				urlStyle = lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+				arrowStyle = lipgloss.NewStyle().Foreground(ui.ColorCyan)
+			}
+
+			line := arrowStyle.Render(arrow) + repoStyle.Render(pr.repoName) + " " + typeStyle.Render("("+pr.prType+")")
+			lines = append(lines, line)
+			lines = append(lines, "   "+urlStyle.Render(pr.url))
+			lines = append(lines, "")
+		}
+	}
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorMagenta)
+	return titleStyle.Render(fmt.Sprintf(" 📋 Session History (%d) ", len(m.sessionPRs))) + "\n" + strings.Join(lines, "\n")
+}
+
 func (m Model) renderStatusBar() string {
 	var hints []string
 
@@ -1964,8 +2006,11 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
 			ui.KeyBinding("c", "Config", ui.ColorMagenta),
 			ui.KeyBinding("u", "Update", ui.ColorCyan),
-			ui.KeyBinding("q", "Quit", ui.ColorRed),
 		}
+		if len(m.sessionPRs) > 0 {
+			hints = append(hints, ui.KeyBinding("h", "History", ui.ColorBlue))
+		}
+		hints = append(hints, ui.KeyBinding("q", "Quit", ui.ColorRed))
 	case ScreenPrTypeSelect:
 		hints = []string{
 			ui.KeyBinding("1-2", "Select", ui.ColorYellow),
@@ -2058,6 +2103,13 @@ func (m Model) renderStatusBar() string {
 		}
 	case ScreenUpdating:
 		hints = []string{}
+	case ScreenSessionHistory:
+		hints = []string{
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
+			ui.KeyBinding("o", "Open URL", ui.ColorBlue),
+			ui.KeyBinding("c", "Copy", ui.ColorBlue),
+			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+		}
 	default:
 		hints = []string{}
 	}

@@ -23,6 +23,7 @@ const (
 	ScreenMergeSummary
 	ScreenUpdatePrompt
 	ScreenUpdating
+	ScreenSessionHistory
 )
 
 func (s Screen) String() string {
@@ -46,6 +47,7 @@ func (s Screen) String() string {
 		"MergeSummary",
 		"UpdatePrompt",
 		"Updating",
+		"SessionHistory",
 	}
 	if int(s) < len(names) {
 		return names[s]

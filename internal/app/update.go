@@ -117,6 +117,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleMergeSummaryKey(msg)
 	case ScreenUpdatePrompt:
 		return m.handleUpdatePromptKey(msg)
+	case ScreenSessionHistory:
+		return m.handleSessionHistoryKey(msg)
 	}
 
 	return m, nil
@@ -163,6 +165,12 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		// Open config in editor
 		return m, openConfigCmd()
+	case "h":
+		// View session history
+		if len(m.sessionPRs) > 0 {
+			m.screen = ScreenSessionHistory
+			m.historyIndex = 0
+		}
 	}
 	return m, nil
 }
@@ -1050,6 +1058,43 @@ func (m Model) executeUpdateSelection() (tea.Model, tea.Cmd) {
 		}
 		m.updateAvailable = nil
 		m.screen = ScreenMainMenu
+	}
+	return m, nil
+}
+
+func (m Model) handleSessionHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		m.shouldQuit = true
+		return m, tea.Quit
+	case "up", "k":
+		if m.historyIndex > 0 {
+			m.historyIndex--
+		}
+	case "down", "j":
+		if m.historyIndex < len(m.sessionPRs)-1 {
+			m.historyIndex++
+		}
+	case "o":
+		// Open selected URL
+		if m.historyIndex < len(m.sessionPRs) {
+			_ = openURL(m.sessionPRs[m.historyIndex].url)
+		}
+	case "c":
+		// Copy selected URL as markdown
+		if m.historyIndex < len(m.sessionPRs) {
+			pr := m.sessionPRs[m.historyIndex]
+			formatted := fmt.Sprintf("- %s: %s", pr.repoName, pr.url)
+			if err := copyToClipboard(formatted); err == nil {
+				m.copyFeedback = "✓ Copied!"
+			} else {
+				m.copyFeedback = "✗ Copy failed"
+			}
+		}
+		return m, nil
+	case "esc", "enter":
+		m.screen = ScreenMainMenu
+		m.menuIndex = 0
 	}
 	return m, nil
 }

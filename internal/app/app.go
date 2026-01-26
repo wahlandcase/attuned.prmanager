@@ -22,6 +22,14 @@ type ConfettiParticle struct {
 	Color  lipgloss.Color
 }
 
+// sessionPR holds info about a PR created during this session
+type sessionPR struct {
+	repoName  string
+	url       string
+	prType    string // "dev→staging" or "staging→main"
+	createdAt time.Time
+}
+
 // Model is the main application state
 type Model struct {
 	// Configuration
@@ -97,6 +105,10 @@ type Model struct {
 	pulsePhase    float64 // 0.0 - 2*PI for sine wave
 	typewriterPos int     // Characters revealed so far
 
+	// Session history (survives reset)
+	sessionPRs   []sessionPR
+	historyIndex int
+
 	// Window size
 	width  int
 	height int
@@ -119,6 +131,7 @@ func New(cfg *config.Config, dryRun, testUpdate bool, version string) Model {
 		menuIndex:  0,
 		width:      80,
 		height:     24,
+		sessionPRs: loadHistory(),
 	}
 }
 

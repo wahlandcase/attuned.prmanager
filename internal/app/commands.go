@@ -791,6 +791,17 @@ func (m Model) handlePrCreatedResult(msg prCreatedResult) (tea.Model, tea.Cmd) {
 	m.prURL = msg.url
 	m.screen = ScreenComplete
 	m.spawnConfetti()
+
+	// Add to session history (only staging→main PRs)
+	if m.repoInfo != nil && m.prType != nil && *m.prType == models.StagingToMain {
+		m.sessionPRs = append(m.sessionPRs, sessionPR{
+			repoName:  m.repoInfo.DisplayName,
+			url:       msg.url,
+			prType:    "staging→main",
+			createdAt: time.Now(),
+		})
+		saveHistory(m.sessionPRs)
+	}
 	return m, nil
 }
 
@@ -798,6 +809,17 @@ func (m Model) handleBatchRepoResult(msg batchRepoResult) (tea.Model, tea.Cmd) {
 	// Only add non-skipped "not selected" results to keep summary clean
 	if !models.IsStatusSkipped(msg.result.Status) || models.GetStatusReason(msg.result.Status) != "Not selected" {
 		m.batchResults = append(m.batchResults, msg.result)
+	}
+
+	// Add successful PRs to session history (only staging→main PRs)
+	if models.IsStatusSuccess(msg.result.Status) && msg.result.PrURL != nil && m.prType != nil && *m.prType == models.StagingToMain {
+		m.sessionPRs = append(m.sessionPRs, sessionPR{
+			repoName:  msg.result.Repo.DisplayName,
+			url:       *msg.result.PrURL,
+			prType:    "staging→main",
+			createdAt: time.Now(),
+		})
+		saveHistory(m.sessionPRs)
 	}
 	m.batchCurrent++
 
