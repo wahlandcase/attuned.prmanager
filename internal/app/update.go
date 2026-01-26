@@ -188,11 +188,7 @@ func (m Model) selectMainMenuItem() (tea.Model, tea.Cmd) {
 		m.screen = ScreenPrTypeSelect
 		m.menuIndex = 0
 	case 2: // View Open PRs
-		mode := ModeBatch
-		m.mode = &mode
-		m.screen = ScreenLoading
-		m.loadingMessage = "Fetching open PRs..."
-		return m, fetchOpenPRsCmd(m.config, m.dryRun)
+		return m.navigateToMergePRs()
 	case 3: // Quit
 		m.shouldQuit = true
 		return m, tea.Quit
@@ -467,6 +463,8 @@ func (m Model) handleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		m.shouldQuit = true
 		return m, tea.Quit
+	case "m":
+		return m.navigateToMergePRs()
 	case "o":
 		if m.prURL != "" {
 			_ = openURL(m.prURL)
@@ -684,6 +682,8 @@ func (m Model) handleBatchSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		m.shouldQuit = true
 		return m, tea.Quit
+	case "m":
+		return m.navigateToMergePRs()
 	case "up":
 		if m.menuIndex > 0 {
 			m.menuIndex--
@@ -1085,4 +1085,12 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	m.confetti = nil
 	m.typewriterPos = 0
 	return m, nil
+}
+
+func (m Model) navigateToMergePRs() (tea.Model, tea.Cmd) {
+	mode := ModeBatch
+	m.mode = &mode
+	m.screen = ScreenLoading
+	m.loadingMessage = "Fetching open PRs..."
+	return m, fetchOpenPRsCmd(m.config, m.dryRun)
 }
