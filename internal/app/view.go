@@ -58,7 +58,9 @@ func (m Model) View() string {
 		m.screen == ScreenViewOpenPrs ||
 		m.screen == ScreenBatchSummary ||
 		m.screen == ScreenMergeSummary ||
-		m.screen == ScreenCommitReview
+		m.screen == ScreenCommitReview ||
+		m.screen == ScreenPullProgress ||
+		m.screen == ScreenPullSummary
 
 	if fullLayoutScreens {
 		sections = append(sections, m.renderContentWithHeight(availableHeight))
@@ -125,6 +127,12 @@ func (m Model) renderContentWithHeight(availableHeight int) string {
 		return m.renderUpdating()
 	case ScreenSessionHistory:
 		return m.renderSessionHistory()
+	case ScreenPullBranchSelect:
+		return m.renderPullBranchSelect()
+	case ScreenPullProgress:
+		return m.renderPullProgress()
+	case ScreenPullSummary:
+		return m.renderPullSummaryWithHeight(availableHeight)
 	default:
 		return ""
 	}
@@ -2004,6 +2012,7 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("1-4", "Select", ui.ColorYellow),
 			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
 			ui.KeyBinding("Enter", "Select", ui.ColorGreen),
+			ui.KeyBinding("p", "Pull", ui.ColorGreen),
 			ui.KeyBinding("c", "Config", ui.ColorMagenta),
 			ui.KeyBinding("u", "Update", ui.ColorCyan),
 		}
@@ -2110,6 +2119,20 @@ func (m Model) renderStatusBar() string {
 			ui.KeyBinding("c", "Copy", ui.ColorBlue),
 			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
 		}
+	case ScreenPullBranchSelect:
+		hints = []string{
+			ui.KeyBinding("1-3", "Select", ui.ColorYellow),
+			ui.KeyBinding("↑↓", "Navigate", ui.ColorWhite),
+			ui.KeyBinding("Enter", "Pull", ui.ColorGreen),
+			ui.KeyBinding("Esc", "Back", ui.ColorYellow),
+		}
+	case ScreenPullProgress:
+		hints = []string{}
+	case ScreenPullSummary:
+		hints = []string{
+			ui.KeyBinding("Enter", "Done", ui.ColorGreen),
+			ui.KeyBinding("q", "Quit", ui.ColorRed),
+		}
 	default:
 		hints = []string{}
 	}
@@ -2179,4 +2202,270 @@ func ptrEqual(a, b *string) bool {
 		return false
 	}
 	return *a == *b
+}
+
+func (m Model) renderPullBranchSelect() string {
+	// Build left column (menu) content
+	var menuLines []string
+	menuLines = append(menuLines, "")
+
+	branches := []struct {
+		num   string
+		name  string
+		desc  string
+		color lipgloss.Color
+	}{
+		{"1.", "dev", "Pull latest development changes", ui.ColorGreen},
+		{"2.", "staging", "Pull staging/QA changes", ui.ColorYellow},
+		{"3.", "main/master", "Pull production code", ui.ColorRed},
+	}
+
+	for i, b := range branches {
+		isSelected := i == m.menuIndex
+		arrow := "  "
+		if isSelected {
+			arrow = "▶ "
+		}
+
+		var line1, line2 string
+		if isSelected {
+			rowStyle := lipgloss.NewStyle().Background(ui.ColorDarkGray).Width(46)
+			arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan).Background(ui.ColorDarkGray)
+			numStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true).Background(ui.ColorDarkGray)
+			nameStyle := lipgloss.NewStyle().Foreground(b.color).Bold(true).Background(ui.ColorDarkGray)
+			descStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite).Background(ui.ColorDarkGray)
+			bgStyle := lipgloss.NewStyle().Background(ui.ColorDarkGray)
+
+			line1 = rowStyle.Render(arrowStyle.Render(arrow) + numStyle.Render(b.num) + bgStyle.Render(" ") + nameStyle.Render(b.name))
+			line2 = rowStyle.Render(bgStyle.Render("      ") + descStyle.Render(b.desc))
+		} else {
+			arrowStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+			numStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+			nameStyle := lipgloss.NewStyle().Foreground(b.color).Bold(true)
+			descStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+
+			line1 = arrowStyle.Render(arrow) + numStyle.Render(b.num) + " " + nameStyle.Render(b.name)
+			line2 = "      " + descStyle.Render(b.desc)
+		}
+
+		menuLines = append(menuLines, line1)
+		menuLines = append(menuLines, line2)
+		menuLines = append(menuLines, "")
+	}
+
+	menuTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorCyan)
+	menuContent := menuTitleStyle.Render(" Select Branch to Pull ") + "\n" + strings.Join(menuLines, "\n")
+
+	// Build right column (info panel)
+	branchInfo := []struct {
+		title string
+		color lipgloss.Color
+		lines []string
+	}{
+		{"dev", ui.ColorGreen, []string{
+			"Pull the latest development",
+			"branch across all repos.",
+			"",
+			"Use this to sync your local",
+			"dev environment with the team.",
+		}},
+		{"staging", ui.ColorYellow, []string{
+			"Pull the staging branch",
+			"across all repos.",
+			"",
+			"Use this to test QA builds",
+			"locally.",
+		}},
+		{"main / master", ui.ColorRed, []string{
+			"Pull the production branch",
+			"across all repos.",
+			"",
+			"Uses each repo's default",
+			"branch (main or master).",
+		}},
+	}
+
+	info := branchInfo[m.menuIndex]
+	titleStyle := lipgloss.NewStyle().Foreground(info.color).Bold(true)
+	var infoLines []string
+	infoLines = append(infoLines, "")
+	infoLines = append(infoLines, "  "+titleStyle.Render(info.title))
+	infoLines = append(infoLines, "")
+	for _, line := range info.lines {
+		infoLines = append(infoLines, "  "+line)
+	}
+
+	infoTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorWhite)
+	infoContent := infoTitleStyle.Render(" Branch Info ") + "\n" + strings.Join(infoLines, "\n")
+
+	return ui.UnifiedPanel(menuContent, infoContent, 48, 48, ui.ColorCyan)
+}
+
+func (m Model) renderPullProgress() string {
+	contentWidth := m.contentWidth()
+
+	var lines []string
+	lines = append(lines, "")
+
+	// Header
+	branchStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(m.pullBranch)).Bold(true)
+	headerStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
+	lines = append(lines, headerStyle.Render("  Pulling ")+branchStyle.Render(m.pullBranch)+headerStyle.Render(" across all repos..."))
+	lines = append(lines, "")
+
+	// Show progress for each repo
+	checkStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen)
+	warnStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow)
+	spinnerStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+	repoStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+
+	maxVisible := 15
+	startIdx := 0
+	if m.pullCurrentIdx > maxVisible-3 {
+		startIdx = m.pullCurrentIdx - (maxVisible - 3)
+	}
+
+	for i := startIdx; i < len(m.pullRepos) && i < startIdx+maxVisible; i++ {
+		repo := m.pullRepos[i]
+		name := repo.DisplayName
+		if len(name) > 30 {
+			name = name[:27] + "..."
+		}
+
+		if i < len(m.pullResults) {
+			// Completed
+			result := m.pullResults[i]
+			var status string
+			switch result.Status {
+			case models.PullUpdated:
+				status = checkStyle.Render("✓") + " " + repoStyle.Render(name) + dimStyle.Render(fmt.Sprintf(" updated (%d commits)", result.CommitCount))
+			case models.PullUpToDate:
+				status = checkStyle.Render("✓") + " " + repoStyle.Render(name) + dimStyle.Render(" already up to date")
+			case models.PullSkippedNoBranch:
+				status = warnStyle.Render("⚠") + " " + repoStyle.Render(name) + dimStyle.Render(fmt.Sprintf(" skipped (no %s branch)", m.pullBranch))
+			case models.PullSkippedDirty:
+				status = warnStyle.Render("⚠") + " " + repoStyle.Render(name) + dimStyle.Render(" skipped (uncommitted changes)")
+			case models.PullFailed:
+				errStyle := lipgloss.NewStyle().Foreground(ui.ColorRed)
+				status = errStyle.Render("✗") + " " + repoStyle.Render(name) + dimStyle.Render(" failed")
+			}
+			lines = append(lines, "  "+status)
+		} else if i == m.pullCurrentIdx {
+			// Currently processing
+			spinner := ui.Spinner(m.spinnerFrame)
+			lines = append(lines, "  "+spinnerStyle.Render(spinner)+" "+repoStyle.Render(name)+dimStyle.Render(" pulling..."))
+		} else {
+			// Waiting
+			lines = append(lines, "  "+dimStyle.Render("  "+name+" waiting..."))
+		}
+	}
+
+	if len(m.pullRepos) > startIdx+maxVisible {
+		remaining := len(m.pullRepos) - (startIdx + maxVisible)
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("  ... and %d more", remaining)))
+	}
+
+	lines = append(lines, "")
+
+	// Progress bar
+	progress := float64(m.pullCurrentIdx) / float64(len(m.pullRepos))
+	barWidth := 40
+	filled := int(progress * float64(barWidth))
+	if filled > barWidth {
+		filled = barWidth
+	}
+
+	progressStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+	emptyStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+	bar := progressStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
+	lines = append(lines, fmt.Sprintf("  %s %d/%d", bar, m.pullCurrentIdx, len(m.pullRepos)))
+
+	content := strings.Join(lines, "\n")
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.ColorPurple).
+		Width(contentWidth).
+		Padding(1, 2)
+
+	return boxStyle.Render(content)
+}
+
+func (m Model) renderPullSummaryWithHeight(availableHeight int) string {
+	var lines []string
+
+	// Header
+	branchStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(m.pullBranch)).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+	lines = append(lines, titleStyle.Render("Pull Complete: ")+branchStyle.Render(m.pullBranch))
+	lines = append(lines, "")
+
+	// Group results by status
+	resultsByStatus := map[models.PullStatus][]models.PullResult{}
+	for _, r := range m.pullResults {
+		resultsByStatus[r.Status] = append(resultsByStatus[r.Status], r)
+	}
+
+	repoStyle := lipgloss.NewStyle().Foreground(ui.ColorCyan)
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
+	greenStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
+	yellowStyle := lipgloss.NewStyle().Foreground(ui.ColorYellow).Bold(true)
+	redStyle := lipgloss.NewStyle().Foreground(ui.ColorRed).Bold(true)
+
+	// Updated
+	if updated := resultsByStatus[models.PullUpdated]; len(updated) > 0 {
+		lines = append(lines, greenStyle.Render(fmt.Sprintf("Updated (%d):", len(updated))))
+		for _, r := range updated {
+			lines = append(lines, "  "+repoStyle.Render(r.Repo.DisplayName)+dimStyle.Render(fmt.Sprintf(" (%d commits)", r.CommitCount)))
+		}
+		lines = append(lines, "")
+	}
+
+	// Already up to date
+	if upToDate := resultsByStatus[models.PullUpToDate]; len(upToDate) > 0 {
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("Already up to date (%d):", len(upToDate))))
+		for _, r := range upToDate {
+			lines = append(lines, "  "+dimStyle.Render(r.Repo.DisplayName))
+		}
+		lines = append(lines, "")
+	}
+
+	// Skipped - no branch
+	if noBranch := resultsByStatus[models.PullSkippedNoBranch]; len(noBranch) > 0 {
+		lines = append(lines, yellowStyle.Render(fmt.Sprintf("Skipped - no branch (%d):", len(noBranch))))
+		for _, r := range noBranch {
+			lines = append(lines, "  "+dimStyle.Render(r.Repo.DisplayName))
+		}
+		lines = append(lines, "")
+	}
+
+	// Skipped - dirty
+	if dirty := resultsByStatus[models.PullSkippedDirty]; len(dirty) > 0 {
+		lines = append(lines, yellowStyle.Render(fmt.Sprintf("Skipped - local changes (%d):", len(dirty))))
+		for _, r := range dirty {
+			lines = append(lines, "  "+dimStyle.Render(r.Repo.DisplayName))
+		}
+		lines = append(lines, "")
+	}
+
+	// Failed
+	if failed := resultsByStatus[models.PullFailed]; len(failed) > 0 {
+		lines = append(lines, redStyle.Render(fmt.Sprintf("Failed (%d):", len(failed))))
+		for _, r := range failed {
+			lines = append(lines, "  "+repoStyle.Render(r.Repo.DisplayName)+dimStyle.Render(" - "+r.Error))
+		}
+		lines = append(lines, "")
+	}
+
+	content := strings.Join(lines, "\n")
+	boxWidth := m.contentWidth() - 10
+
+	// Determine header color based on results
+	headerColor := ui.ColorGreen
+	if len(resultsByStatus[models.PullFailed]) > 0 {
+		headerColor = ui.ColorYellow
+	}
+
+	return ui.ColumnBox(content, " Pull Summary ", headerColor, true, boxWidth, availableHeight)
 }

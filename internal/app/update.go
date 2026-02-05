@@ -76,6 +76,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateDownloadResult:
 		return m.handleUpdateDownloadResult(msg)
+
+	case pullReposLoadedResult:
+		return m.handlePullReposLoaded(msg)
+
+	case pullRepoResult:
+		return m.handlePullRepoResult(msg)
 	}
 
 	return m, nil
@@ -119,6 +125,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdatePromptKey(msg)
 	case ScreenSessionHistory:
 		return m.handleSessionHistoryKey(msg)
+	case ScreenPullBranchSelect:
+		return m.handlePullBranchSelectKey(msg)
+	case ScreenPullSummary:
+		return m.handlePullSummaryKey(msg)
 	}
 
 	return m, nil
@@ -171,6 +181,10 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.screen = ScreenSessionHistory
 			m.historyIndex = 0
 		}
+	case "p":
+		// Pull all repos
+		m.screen = ScreenPullBranchSelect
+		m.menuIndex = 0
 	}
 	return m, nil
 }
@@ -1129,6 +1143,11 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	// Reset animation state
 	m.confetti = nil
 	m.typewriterPos = 0
+	// Reset pull state
+	m.pullBranch = ""
+	m.pullRepos = nil
+	m.pullResults = nil
+	m.pullCurrentIdx = 0
 	return m, nil
 }
 
@@ -1138,4 +1157,58 @@ func (m Model) navigateToMergePRs() (tea.Model, tea.Cmd) {
 	m.screen = ScreenLoading
 	m.loadingMessage = "Fetching open PRs..."
 	return m, fetchOpenPRsCmd(m.config, m.dryRun)
+}
+
+func (m Model) handlePullBranchSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		m.shouldQuit = true
+		return m, tea.Quit
+	case "up", "k":
+		if m.menuIndex > 0 {
+			m.menuIndex--
+		} else {
+			m.menuIndex = 2 // Wrap to bottom (3 options: dev, staging, main)
+		}
+	case "down", "j":
+		if m.menuIndex < 2 {
+			m.menuIndex++
+		} else {
+			m.menuIndex = 0 // Wrap to top
+		}
+	case "enter":
+		return m.selectPullBranch()
+	case "1":
+		m.menuIndex = 0
+		return m.selectPullBranch()
+	case "2":
+		m.menuIndex = 1
+		return m.selectPullBranch()
+	case "3":
+		m.menuIndex = 2
+		return m.selectPullBranch()
+	case "esc":
+		m.screen = ScreenMainMenu
+		m.menuIndex = 0
+	}
+	return m, nil
+}
+
+func (m Model) selectPullBranch() (tea.Model, tea.Cmd) {
+	branches := []string{"dev", "staging", "main"}
+	m.pullBranch = branches[m.menuIndex]
+	m.screen = ScreenLoading
+	m.loadingMessage = fmt.Sprintf("Scanning repositories for %s...", m.pullBranch)
+	return m, loadPullReposCmd(m.config)
+}
+
+func (m Model) handlePullSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		m.shouldQuit = true
+		return m, tea.Quit
+	case "enter", "esc":
+		return m.reset()
+	}
+	return m, nil
 }

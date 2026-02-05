@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // IsGitRepo checks if the path is a git repository
@@ -229,6 +230,105 @@ func FindAttunedRepos(basePath, frontendGlob, backendGlob string) ([]models.Repo
 	})
 
 	return repos, nil
+}
+
+// HasBranch checks if a branch exists (locally or remote)
+func HasBranch(repoPath, branch string) bool {
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return false
+	}
+
+	// Check remote ref first
+	remoteRef := "refs/remotes/origin/" + branch
+	if _, err := repo.Reference(plumbing.ReferenceName(remoteRef), true); err == nil {
+		return true
+	}
+
+	// Check local ref
+	localRef := "refs/heads/" + branch
+	if _, err := repo.Reference(plumbing.ReferenceName(localRef), true); err == nil {
+		return true
+	}
+
+	return false
+}
+
+// IsDirty checks if the repo has uncommitted changes (using git CLI for accuracy)
+func IsDirty(repoPath string) (bool, error) {
+	// Use git status --porcelain which outputs nothing if clean
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+
+	// If output is empty, repo is clean
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// CheckoutAndPull checks out the branch and pulls, returning commit count
+func CheckoutAndPull(repoPath, branch string) (int, error) {
+	// Get current commit before pull
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return 0, err
+	}
+
+	// Use git CLI for checkout (better SSH agent handling)
+	checkoutCmd := exec.Command("git", "checkout", branch)
+	checkoutCmd.Dir = repoPath
+	if output, err := checkoutCmd.CombinedOutput(); err != nil {
+		return 0, &GitError{Command: "checkout", Output: strings.TrimSpace(string(output))}
+	}
+
+	// Get HEAD before pull
+	headBefore, err := repo.Head()
+	if err != nil {
+		return 0, err
+	}
+
+	// Use git CLI for pull (better SSH agent handling)
+	pullCmd := exec.Command("git", "pull", "--ff-only")
+	pullCmd.Dir = repoPath
+	if output, err := pullCmd.CombinedOutput(); err != nil {
+		return 0, &GitError{Command: "pull", Output: strings.TrimSpace(string(output))}
+	}
+
+	// Re-open repo and get HEAD after pull
+	repo, err = git.PlainOpen(repoPath)
+	if err != nil {
+		return 0, err
+	}
+
+	headAfter, err := repo.Head()
+	if err != nil {
+		return 0, err
+	}
+
+	// If same commit, no changes
+	if headBefore.Hash() == headAfter.Hash() {
+		return 0, nil
+	}
+
+	// Count commits between old and new HEAD
+	commitCount := 0
+	iter, err := repo.Log(&git.LogOptions{From: headAfter.Hash()})
+	if err != nil {
+		return 0, err
+	}
+
+	iter.ForEach(func(c *object.Commit) error {
+		if c.Hash == headBefore.Hash() {
+			return fmt.Errorf("stop") // Stop iteration
+		}
+		commitCount++
+		return nil
+	})
+
+	return commitCount, nil
 }
 
 // findNestedRepos finds nested git repos inside a parent repo (like attuned-services)

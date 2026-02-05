@@ -974,3 +974,136 @@ func openURLs(urls []string) {
 		_ = openURL(url)
 	}
 }
+
+// Pull all repos messages and commands
+
+type pullRepoResult struct {
+	result models.PullResult
+}
+
+type pullReposLoadedResult struct {
+	repos []models.RepoInfo
+	err   error
+}
+
+// makePullResult creates a pullRepoResult with the given status
+func makePullResult(repo models.RepoInfo, status models.PullStatus, commits int, errMsg string) pullRepoResult {
+	return pullRepoResult{result: models.PullResult{
+		Repo:        repo,
+		Status:      status,
+		CommitCount: commits,
+		Error:       errMsg,
+	}}
+}
+
+// loadPullReposCmd loads all repos for pull operation
+func loadPullReposCmd(cfg *config.Config) tea.Cmd {
+	return func() tea.Msg {
+		repos, err := git.FindAttunedRepos(cfg.AttunedPath(), cfg.Paths.FrontendGlob, cfg.Paths.BackendGlob)
+		if err != nil {
+			return pullReposLoadedResult{err: err}
+		}
+		return pullReposLoadedResult{repos: repos}
+	}
+}
+
+// pullNextRepoCmd pulls the next repo in the list
+func pullNextRepoCmd(repo models.RepoInfo, branch string, dryRun bool) tea.Cmd {
+	return func() tea.Msg {
+		// For "main", use the repo's actual main branch (could be "master")
+		targetBranch := branch
+		if branch == "main" {
+			targetBranch = repo.MainBranch
+		}
+
+		if dryRun {
+			time.Sleep(200 * time.Millisecond)
+			// Simulate various results for dry run
+			hash := 0
+			for _, c := range repo.DisplayName {
+				hash += int(c)
+			}
+			statuses := []models.PullStatus{
+				models.PullUpdated,
+				models.PullUpToDate,
+				models.PullSkippedNoBranch,
+			}
+			status := statuses[hash%len(statuses)]
+			commits := 0
+			if status == models.PullUpdated {
+				commits = (hash % 5) + 1
+			}
+			return makePullResult(repo, status, commits, "")
+		}
+
+		// Check if branch exists
+		if !git.HasBranch(repo.Path, targetBranch) {
+			return makePullResult(repo, models.PullSkippedNoBranch, 0, "")
+		}
+
+		// Check for dirty working tree
+		dirty, err := git.IsDirty(repo.Path)
+		if err != nil {
+			return makePullResult(repo, models.PullFailed, 0, err.Error())
+		}
+		if dirty {
+			return makePullResult(repo, models.PullSkippedDirty, 0, "")
+		}
+
+		// Fetch first to get remote changes
+		if err := git.FetchBranches(repo.Path, []string{targetBranch}); err != nil {
+			// If fetch fails due to branch not found, skip
+			if _, ok := err.(*git.BranchNotFoundError); ok {
+				return makePullResult(repo, models.PullSkippedNoBranch, 0, "")
+			}
+			return makePullResult(repo, models.PullFailed, 0, err.Error())
+		}
+
+		// Checkout and pull
+		commits, err := git.CheckoutAndPull(repo.Path, targetBranch)
+		if err != nil {
+			return makePullResult(repo, models.PullFailed, 0, err.Error())
+		}
+
+		if commits == 0 {
+			return makePullResult(repo, models.PullUpToDate, 0, "")
+		}
+		return makePullResult(repo, models.PullUpdated, commits, "")
+	}
+}
+
+// handlePullReposLoaded handles the result of loading repos for pull
+func (m Model) handlePullReposLoaded(msg pullReposLoadedResult) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.errorMessage = msg.err.Error()
+		m.screen = ScreenError
+		return m, nil
+	}
+
+	m.pullRepos = msg.repos
+	m.pullResults = nil
+	m.pullCurrentIdx = 0
+	m.screen = ScreenPullProgress
+
+	if len(m.pullRepos) == 0 {
+		m.screen = ScreenPullSummary
+		return m, nil
+	}
+
+	// Start pulling first repo
+	return m, pullNextRepoCmd(m.pullRepos[0], m.pullBranch, m.dryRun)
+}
+
+// handlePullRepoResult handles the result of pulling a single repo
+func (m Model) handlePullRepoResult(msg pullRepoResult) (tea.Model, tea.Cmd) {
+	m.pullResults = append(m.pullResults, msg.result)
+	m.pullCurrentIdx++
+
+	if m.pullCurrentIdx >= len(m.pullRepos) {
+		m.screen = ScreenPullSummary
+		return m, nil
+	}
+
+	// Pull next repo
+	return m, pullNextRepoCmd(m.pullRepos[m.pullCurrentIdx], m.pullBranch, m.dryRun)
+}

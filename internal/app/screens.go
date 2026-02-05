@@ -24,6 +24,9 @@ const (
 	ScreenUpdatePrompt
 	ScreenUpdating
 	ScreenSessionHistory
+	ScreenPullBranchSelect
+	ScreenPullProgress
+	ScreenPullSummary
 )
 
 func (s Screen) String() string {
@@ -48,6 +51,9 @@ func (s Screen) String() string {
 		"UpdatePrompt",
 		"Updating",
 		"SessionHistory",
+		"PullBranchSelect",
+		"PullProgress",
+		"PullSummary",
 	}
 	if int(s) < len(names) {
 		return names[s]

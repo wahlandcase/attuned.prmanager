@@ -109,6 +109,12 @@ type Model struct {
 	sessionPRs   []sessionPR
 	historyIndex int
 
+	// Pull all state
+	pullBranch     string // "dev", "staging", or "main"
+	pullRepos      []models.RepoInfo
+	pullResults    []models.PullResult
+	pullCurrentIdx int
+
 	// Window size
 	width  int
 	height int
