@@ -40,9 +40,11 @@ attpr --dry-run    # Test without GitHub access
 | Key | Action |
 |-----|--------|
 | `↑/↓` | Navigate lists |
-| `←/→` | Switch columns (batch/merge views) |
+| `←/→` | Switch columns (batch/merge/actions views) |
 | `Enter` | Select/Confirm |
-| `Space` | Toggle selection |
+| `Space` | Toggle selection / Pin run (actions) |
+| `/` | Enter filter mode (actions) |
+| `o` | Open in browser |
 | `Esc` | Go back |
 | `q` | Quit |
 
@@ -51,6 +53,7 @@ attpr --dry-run    # Test without GitHub access
 - **Single PR**: Create a release PR for one repo (dev → staging or staging → main)
 - **Batch PR**: Create release PRs across multiple repos at once
 - **View/Merge PRs**: See open release PRs and merge them
+- **GitHub Actions**: Monitor workflow runs across all repos with a split-panel view — pin runs to see job/step details, auto-refreshes every 5s
 - **Ticket Extraction**: Automatically extracts ticket IDs from commit messages
 - **Auto-Update**: Checks for updates on startup and prompts to install
 
