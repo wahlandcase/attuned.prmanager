@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -781,6 +782,20 @@ func (m Model) handleBatchCommitsResult(msg batchCommitsResult) (tea.Model, tea.
 	return m, nil
 }
 
+// recordSessionPR adds a PR to session history if it's a staging→main PR
+func (m *Model) recordSessionPR(repoName, url string) {
+	if m.prType == nil || *m.prType != models.StagingToMain {
+		return
+	}
+	m.sessionPRs = append(m.sessionPRs, sessionPR{
+		repoName:  repoName,
+		url:       url,
+		prType:    "staging→main",
+		createdAt: time.Now(),
+	})
+	saveHistory(m.sessionPRs)
+}
+
 func (m Model) handlePrCreatedResult(msg prCreatedResult) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.errorMessage = msg.err.Error()
@@ -792,15 +807,8 @@ func (m Model) handlePrCreatedResult(msg prCreatedResult) (tea.Model, tea.Cmd) {
 	m.screen = ScreenComplete
 	m.spawnConfetti()
 
-	// Add to session history (only staging→main PRs)
-	if m.repoInfo != nil && m.prType != nil && *m.prType == models.StagingToMain {
-		m.sessionPRs = append(m.sessionPRs, sessionPR{
-			repoName:  m.repoInfo.DisplayName,
-			url:       msg.url,
-			prType:    "staging→main",
-			createdAt: time.Now(),
-		})
-		saveHistory(m.sessionPRs)
+	if m.repoInfo != nil {
+		m.recordSessionPR(m.repoInfo.DisplayName, msg.url)
 	}
 	return m, nil
 }
@@ -811,15 +819,9 @@ func (m Model) handleBatchRepoResult(msg batchRepoResult) (tea.Model, tea.Cmd) {
 		m.batchResults = append(m.batchResults, msg.result)
 	}
 
-	// Add successful PRs to session history (only staging→main PRs)
-	if models.IsStatusSuccess(msg.result.Status) && msg.result.PrURL != nil && m.prType != nil && *m.prType == models.StagingToMain {
-		m.sessionPRs = append(m.sessionPRs, sessionPR{
-			repoName:  msg.result.Repo.DisplayName,
-			url:       *msg.result.PrURL,
-			prType:    "staging→main",
-			createdAt: time.Now(),
-		})
-		saveHistory(m.sessionPRs)
+	// Add successful PRs to session history
+	if models.IsStatusSuccess(msg.result.Status) && msg.result.PrURL != nil {
+		m.recordSessionPR(msg.result.Repo.DisplayName, *msg.result.PrURL)
 	}
 	m.batchCurrent++
 
@@ -1106,4 +1108,229 @@ func (m Model) handlePullRepoResult(msg pullRepoResult) (tea.Model, tea.Cmd) {
 
 	// Pull next repo
 	return m, pullNextRepoCmd(m.pullRepos[m.pullCurrentIdx], m.pullBranch, m.dryRun)
+}
+
+// GitHub Actions messages and commands
+
+type actionsRunsFetchedResult struct {
+	entries []actionsEntry
+	err     error
+}
+
+type actionsRefreshTickMsg struct{}
+
+type actionsJobsFetchedResult struct {
+	runID uint64
+	jobs  []models.WorkflowJob
+	err   error
+}
+
+func fetchActionsRunsCmd(cfg *config.Config, dryRun bool) tea.Cmd {
+	return func() tea.Msg {
+		if dryRun {
+			time.Sleep(800 * time.Millisecond)
+			now := time.Now()
+			fakeRepos := []models.RepoInfo{
+				{Path: "/home/user/repos/frontend/web", DisplayName: "frontend/web", MainBranch: "main"},
+				{Path: "/home/user/repos/frontend/mobile", DisplayName: "frontend/mobile", MainBranch: "main"},
+				{Path: "/home/user/repos/backend/api", DisplayName: "backend/api", MainBranch: "main"},
+				{Path: "/home/user/repos/backend/workers", DisplayName: "backend/workers", MainBranch: "main"},
+			}
+			fakeEntries := []actionsEntry{
+				{Repo: fakeRepos[0], Run: models.WorkflowRun{DatabaseID: 1001, DisplayTitle: "feat: Add dashboard", WorkflowName: "CI", Status: "in_progress", HeadBranch: "dev", Event: "push", URL: "https://github.com/example/web/actions/runs/1001", CreatedAt: now.Add(-3 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)}},
+				{Repo: fakeRepos[0], Run: models.WorkflowRun{DatabaseID: 1000, DisplayTitle: "fix: Auth bug", WorkflowName: "CI", Status: "completed", Conclusion: "success", HeadBranch: "staging", Event: "push", URL: "https://github.com/example/web/actions/runs/1000", CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now.Add(-25 * time.Minute)}},
+				{Repo: fakeRepos[1], Run: models.WorkflowRun{DatabaseID: 2001, DisplayTitle: "chore: Update deps", WorkflowName: "CI", Status: "completed", Conclusion: "failure", HeadBranch: "dev", Event: "push", URL: "https://github.com/example/mobile/actions/runs/2001", CreatedAt: now.Add(-10 * time.Minute), UpdatedAt: now.Add(-8 * time.Minute)}},
+				{Repo: fakeRepos[2], Run: models.WorkflowRun{DatabaseID: 3001, DisplayTitle: "feat: Add endpoints", WorkflowName: "CI", Status: "in_progress", HeadBranch: "dev", Event: "push", URL: "https://github.com/example/api/actions/runs/3001", CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-30 * time.Second)}},
+				{Repo: fakeRepos[2], Run: models.WorkflowRun{DatabaseID: 3002, DisplayTitle: "Deploy staging", WorkflowName: "Deploy", Status: "queued", HeadBranch: "staging", Event: "push", URL: "https://github.com/example/api/actions/runs/3002", CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)}},
+				{Repo: fakeRepos[2], Run: models.WorkflowRun{DatabaseID: 3000, DisplayTitle: "fix: DB migration", WorkflowName: "CI", Status: "completed", Conclusion: "success", HeadBranch: "main", Event: "push", URL: "https://github.com/example/api/actions/runs/3000", CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-55 * time.Minute)}},
+				{Repo: fakeRepos[3], Run: models.WorkflowRun{DatabaseID: 4001, DisplayTitle: "refactor: Queue handler", WorkflowName: "CI", Status: "completed", Conclusion: "cancelled", HeadBranch: "dev", Event: "push", URL: "https://github.com/example/workers/actions/runs/4001", CreatedAt: now.Add(-15 * time.Minute), UpdatedAt: now.Add(-12 * time.Minute)}},
+			}
+			return actionsRunsFetchedResult{entries: fakeEntries}
+		}
+
+		repos, err := git.FindAttunedRepos(cfg.AttunedPath(), cfg.Paths.FrontendGlob, cfg.Paths.BackendGlob)
+		if err != nil {
+			return actionsRunsFetchedResult{err: err}
+		}
+
+		type repoResult struct {
+			repo models.RepoInfo
+			runs []models.WorkflowRun
+		}
+
+		var wg sync.WaitGroup
+		results := make(chan repoResult, len(repos))
+
+		for _, repo := range repos {
+			wg.Add(1)
+			go func(r models.RepoInfo) {
+				defer wg.Done()
+				runs, err := github.ListWorkflowRuns(r.Path, 10)
+				if err != nil {
+					results <- repoResult{repo: r}
+					return
+				}
+				results <- repoResult{repo: r, runs: runs}
+			}(repo)
+		}
+
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		cutoff := time.Now().Add(-48 * time.Hour)
+		var entries []actionsEntry
+		for res := range results {
+			// Keep in-progress/queued runs + latest completed per workflow (within 48h)
+			latestCompleted := map[string]bool{} // workflowName -> already added
+			for _, run := range res.runs {
+				if run.UpdatedAt.Before(cutoff) {
+					continue
+				}
+				if run.Status == "in_progress" || run.Status == "queued" {
+					entries = append(entries, actionsEntry{Repo: res.repo, Run: run})
+				} else if run.Status == "completed" && !latestCompleted[run.WorkflowName] {
+					entries = append(entries, actionsEntry{Repo: res.repo, Run: run})
+					latestCompleted[run.WorkflowName] = true
+				}
+			}
+		}
+
+		// Sort: newest first (by UpdatedAt descending)
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Run.UpdatedAt.After(entries[j].Run.UpdatedAt)
+		})
+
+		return actionsRunsFetchedResult{entries: entries}
+	}
+}
+
+func actionsRefreshTickCmd() tea.Cmd {
+	return tea.Tick(5*time.Second, func(_ time.Time) tea.Msg {
+		return actionsRefreshTickMsg{}
+	})
+}
+
+func fetchActionsJobsCmd(repoPath string, runID uint64, dryRun bool) tea.Cmd {
+	return func() tea.Msg {
+		if dryRun {
+			time.Sleep(500 * time.Millisecond)
+			now := time.Now()
+			fakeJobs := []models.WorkflowJob{
+				{
+					Name: "build", Status: "completed", Conclusion: "success",
+					StartedAt: now.Add(-5 * time.Minute), CompletedAt: now.Add(-3 * time.Minute),
+					URL: "https://github.com/example/repo/actions/runs/1001/job/1",
+					Steps: []models.WorkflowStep{
+						{Name: "Checkout", Number: 1, Status: "completed", Conclusion: "success"},
+						{Name: "Setup Node", Number: 2, Status: "completed", Conclusion: "success"},
+						{Name: "Install deps", Number: 3, Status: "completed", Conclusion: "success"},
+						{Name: "Build", Number: 4, Status: "completed", Conclusion: "success"},
+					},
+				},
+				{
+					Name: "test", Status: "in_progress", Conclusion: "",
+					StartedAt: now.Add(-2 * time.Minute),
+					URL:        "https://github.com/example/repo/actions/runs/1001/job/2",
+					Steps: []models.WorkflowStep{
+						{Name: "Checkout", Number: 1, Status: "completed", Conclusion: "success"},
+						{Name: "Setup Node", Number: 2, Status: "completed", Conclusion: "success"},
+						{Name: "Run tests", Number: 3, Status: "in_progress", Conclusion: ""},
+						{Name: "Upload coverage", Number: 4, Status: "queued", Conclusion: ""},
+					},
+				},
+				{
+					Name: "deploy", Status: "queued", Conclusion: "",
+					URL: "https://github.com/example/repo/actions/runs/1001/job/3",
+					Steps: []models.WorkflowStep{
+						{Name: "Deploy to staging", Number: 1, Status: "queued", Conclusion: ""},
+					},
+				},
+			}
+			return actionsJobsFetchedResult{runID: runID, jobs: fakeJobs}
+		}
+
+		jobs, err := github.GetWorkflowRunJobs(repoPath, runID)
+		if err != nil {
+			return actionsJobsFetchedResult{runID: runID, err: err}
+		}
+		return actionsJobsFetchedResult{runID: runID, jobs: jobs}
+	}
+}
+
+func (m Model) handleActionsRunsFetched(msg actionsRunsFetchedResult) (tea.Model, tea.Cmd) {
+	m.actionsLoading = false
+	if msg.err != nil {
+		if m.screen == ScreenActionsOverview || m.screen == ScreenLoading {
+			m.errorMessage = msg.err.Error()
+			m.screen = ScreenError
+		}
+		return m, nil
+	}
+	m.actionsEntries = msg.entries
+	m.actionsLastRefresh = time.Now()
+	if m.screen == ScreenLoading {
+		m.screen = ScreenActionsOverview
+	}
+
+	// Clamp index and scroll to new filtered list size
+	filtered := m.getFilteredActions()
+	if m.actionsIndex >= len(filtered) {
+		m.actionsIndex = max(len(filtered)-1, 0)
+	}
+	m.adjustActionsRunScroll(filtered)
+
+	// Update pinned panels with fresh run data and re-fetch jobs if status changed or still active
+	var refreshCmds []tea.Cmd
+	for i, panel := range m.actionsPinned {
+		for _, entry := range msg.entries {
+			if entry.Run.DatabaseID == panel.Run.DatabaseID {
+				if entry.Run.Status != panel.Run.Status || entry.Run.Status == "in_progress" || entry.Run.Status == "queued" {
+					refreshCmds = append(refreshCmds, fetchActionsJobsCmd(entry.Repo.Path, entry.Run.DatabaseID, m.dryRun))
+				}
+				m.actionsPinned[i].Run = entry.Run
+				break
+			}
+		}
+	}
+
+	var cmds []tea.Cmd
+	if m.screen == ScreenActionsOverview {
+		cmds = append(cmds, actionsRefreshTickCmd())
+	}
+	cmds = append(cmds, refreshCmds...)
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleActionsRefreshTick() (tea.Model, tea.Cmd) {
+	if m.screen != ScreenActionsOverview {
+		return m, nil // Stop tick chain
+	}
+	m.actionsLoading = true
+	return m, fetchActionsRunsCmd(m.config, m.dryRun)
+}
+
+func (m Model) handleActionsJobsFetched(msg actionsJobsFetchedResult) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		// Inline unpin — can't call pointer receiver unpinRun from value receiver
+		for i, p := range m.actionsPinned {
+			if p.Run.DatabaseID == msg.runID {
+				m.actionsPinned = append(m.actionsPinned[:i], m.actionsPinned[i+1:]...)
+				if m.actionsPinnedIndex >= len(m.actionsPinned) && m.actionsPinnedIndex > 0 {
+					m.actionsPinnedIndex--
+				}
+				break
+			}
+		}
+		return m, nil
+	}
+	// Find the pinned panel by runID and set its jobs
+	for i, p := range m.actionsPinned {
+		if p.Run.DatabaseID == msg.runID {
+			m.actionsPinned[i].Jobs = msg.jobs
+			break
+		}
+	}
+	return m, nil
 }

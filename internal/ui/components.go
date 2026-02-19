@@ -69,62 +69,44 @@ func centerText(s string, width int) string {
 // YesNoButtons creates interactive Yes/No buttons
 // selection: 0 for Yes, 1 for No
 func YesNoButtons(selection int) string {
-	var yesBorder, yesText, yesIcon lipgloss.Color
-	var noBorder, noText, noIcon lipgloss.Color
+	// When selected: button uses its accent color throughout; when not: dim border, white text
+	yesActive := selection == 0
+	noActive := selection == 1
 
-	if selection == 0 {
-		yesBorder = ColorGreen
-		yesText = ColorGreen
-		yesIcon = ColorGreen
-	} else {
-		yesBorder = ColorDarkGray
-		yesText = ColorWhite
-		yesIcon = ColorDarkGray
-	}
+	yesColor, yesTextColor := colorForButton(yesActive, ColorGreen)
+	noColor, noTextColor := colorForButton(noActive, ColorRed)
 
-	if selection == 1 {
-		noBorder = ColorRed
-		noText = ColorRed
-		noIcon = ColorRed
-	} else {
-		noBorder = ColorDarkGray
-		noText = ColorWhite
-		noIcon = ColorDarkGray
-	}
+	yesStyle := lipgloss.NewStyle().Foreground(yesColor)
+	noStyle := lipgloss.NewStyle().Foreground(noColor)
 
-	yesStyle := lipgloss.NewStyle().Foreground(yesBorder)
-	yesTextStyle := lipgloss.NewStyle().Foreground(yesText).Bold(true)
-	yesIconStyle := lipgloss.NewStyle().Foreground(yesIcon)
-
-	noStyle := lipgloss.NewStyle().Foreground(noBorder)
-	noTextStyle := lipgloss.NewStyle().Foreground(noText).Bold(true)
-	noIconStyle := lipgloss.NewStyle().Foreground(noIcon)
-
-	// Build buttons
-	var iconYes, iconNo string
-	if selection == 0 {
+	iconYes, iconNo := " ", " "
+	if yesActive {
 		iconYes = ">"
-	} else {
-		iconYes = " "
 	}
-	if selection == 1 {
+	if noActive {
 		iconNo = ">"
-	} else {
-		iconNo = " "
 	}
 
 	line1 := yesStyle.Render("  ┌────────┐") + " " + noStyle.Render("┌───────┐")
 	line2 := fmt.Sprintf("%s%s%s %s%s%s",
 		yesStyle.Render("  │"),
-		yesTextStyle.Render(fmt.Sprintf(" %s  YES ", yesIconStyle.Render(iconYes))),
+		lipgloss.NewStyle().Foreground(yesTextColor).Bold(true).Render(fmt.Sprintf(" %s  YES ", lipgloss.NewStyle().Foreground(yesColor).Render(iconYes))),
 		yesStyle.Render("│"),
 		noStyle.Render("│"),
-		noTextStyle.Render(fmt.Sprintf(" %s  NO ", noIconStyle.Render(iconNo))),
+		lipgloss.NewStyle().Foreground(noTextColor).Bold(true).Render(fmt.Sprintf(" %s  NO ", lipgloss.NewStyle().Foreground(noColor).Render(iconNo))),
 		noStyle.Render("│"),
 	)
 	line3 := yesStyle.Render("  └────────┘") + " " + noStyle.Render("└───────┘")
 
 	return line1 + "\n" + line2 + "\n" + line3
+}
+
+// colorForButton returns (borderColor, textColor) based on whether the button is active
+func colorForButton(active bool, accentColor lipgloss.Color) (lipgloss.Color, lipgloss.Color) {
+	if active {
+		return accentColor, accentColor
+	}
+	return ColorDarkGray, ColorWhite
 }
 
 // Spinner frames using braille characters (matching Rust app)
@@ -133,6 +115,26 @@ var SpinnerFrames = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧
 // Spinner returns the spinner character at the given frame index
 func Spinner(frame int) string {
 	return string(SpinnerFrames[frame%len(SpinnerFrames)])
+}
+
+// WorkflowStatusIcon returns the icon and color for a GitHub Actions status/conclusion pair
+func WorkflowStatusIcon(status, conclusion string, spinnerFrame int) (string, lipgloss.Color) {
+	switch {
+	case status == "in_progress":
+		return Spinner(spinnerFrame), ColorYellow
+	case status == "queued":
+		return "◌", ColorDarkGray
+	case conclusion == "success":
+		return "✓", ColorGreen
+	case conclusion == "failure":
+		return "✗", ColorRed
+	case conclusion == "cancelled":
+		return "⊘", ColorDarkGray
+	case conclusion == "skipped":
+		return "⊘", ColorDarkGray
+	default:
+		return "?", ColorDarkGray
+	}
 }
 
 // Checkbox renders a checkbox in the given state
@@ -160,14 +162,6 @@ func KeyBinding(key, description string, color lipgloss.Color) string {
 		keyStyle.Render(key),
 		descStyle.Render(description),
 	)
-}
-
-// max returns the maximum of two integers
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // MenuInfoPanel returns the ASCII art and description for a menu item
@@ -222,6 +216,22 @@ func MenuInfoPanel(index int) (title string, lines []string) {
 			"  • Select and batch merge",
 			"  • Smart ordering (dev first)",
 			"  • Open or copy URLs",
+		}
+	case 3: // GitHub Actions
+		title = "GitHub Actions"
+		runningStyle := lipgloss.NewStyle().Foreground(ColorYellow)
+		successStyle := lipgloss.NewStyle().Foreground(ColorGreen)
+		failStyle := lipgloss.NewStyle().Foreground(ColorRed)
+		dimStyle := lipgloss.NewStyle().Foreground(ColorDarkGray)
+		lines = []string{
+			"",
+			"       " + runningStyle.Render("⠹") + " CI  " + successStyle.Render("✓") + " Deploy",
+			"       " + failStyle.Render("✗") + " Test  " + dimStyle.Render("◌") + " Lint",
+			"",
+			"  • Monitor all workflow runs",
+			"  • Auto-refresh every 10s",
+			"  • Drill into job details",
+			"  • Open runs in browser",
 		}
 	default: // Quit
 		title = "Quit"
@@ -286,16 +296,20 @@ func ColumnBox(content string, title string, color lipgloss.Color, isActive bool
 		fullContent = content
 	}
 
-	// Manually pad/truncate to fixed height
+	// Manually pad/truncate to fixed height and prevent line wrapping
 	if height > 0 {
 		lines := strings.Split(fullContent, "\n")
+		// Truncate lines that exceed column width to prevent wrapping
+		for i, line := range lines {
+			if lipgloss.Width(line) > width {
+				lines[i] = lipgloss.NewStyle().MaxWidth(width).Render(line)
+			}
+		}
 		if len(lines) < height {
-			// Pad with empty lines
 			for len(lines) < height {
 				lines = append(lines, "")
 			}
 		} else if len(lines) > height {
-			// Truncate
 			lines = lines[:height]
 		}
 		fullContent = strings.Join(lines, "\n")
@@ -374,7 +388,7 @@ func RepoListItemWithCommits(name string, selected bool, highlighted bool, color
 }
 
 // PRListItem renders a compact single-line PR item for the merge view
-func PRListItem(repoName string, prNumber uint64, headBranch string, baseBranch string, prURL string, selected bool, highlighted bool, color lipgloss.Color) string {
+func PRListItem(repoName string, prNumber uint64, selected bool, highlighted bool, color lipgloss.Color) string {
 	checkbox := Checkbox(selected)
 	arrow := Arrow(highlighted)
 

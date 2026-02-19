@@ -27,6 +27,7 @@ const (
 	ScreenPullBranchSelect
 	ScreenPullProgress
 	ScreenPullSummary
+	ScreenActionsOverview
 )
 
 func (s Screen) String() string {
@@ -54,6 +55,7 @@ func (s Screen) String() string {
 		"PullBranchSelect",
 		"PullProgress",
 		"PullSummary",
+		"ActionsOverview",
 	}
 	if int(s) < len(names) {
 		return names[s]

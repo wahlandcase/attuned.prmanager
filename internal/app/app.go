@@ -115,6 +115,21 @@ type Model struct {
 	pullResults    []models.PullResult
 	pullCurrentIdx int
 
+	// GitHub Actions state
+	actionsEntries     []actionsEntry
+	actionsIndex       int // flat index into filtered entries
+	actionsLoading     bool
+	actionsLastRefresh time.Time
+	actionsFilter       string
+	actionsFilterActive bool
+
+	// Actions pinned runs (shown in right panel)
+	actionsPinned       []actionsPanel
+	actionsColumn       int // 0=left (runs), 1=right (pinned)
+	actionsRunScroll    int // scroll offset in lines for left run list
+	actionsPinnedIndex  int // focused pinned panel index
+	actionsPinnedScroll int // scroll offset in lines for right panel
+
 	// Window size
 	width  int
 	height int
@@ -124,6 +139,130 @@ type Model struct {
 type OpenPREntry struct {
 	Repo   models.RepoInfo
 	Status models.RepoPrStatus
+}
+
+// actionsEntry holds a single workflow run with its repo
+type actionsEntry struct {
+	Repo models.RepoInfo
+	Run  models.WorkflowRun
+}
+
+// actionsPanel holds a pinned workflow run with its fetched job details
+type actionsPanel struct {
+	Run  models.WorkflowRun
+	Repo models.RepoInfo
+	Jobs []models.WorkflowJob // nil = loading
+}
+
+func (m *Model) isPinned(runID uint64) bool {
+	for _, p := range m.actionsPinned {
+		if p.Run.DatabaseID == runID {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) unpinRun(runID uint64) bool {
+	for i, p := range m.actionsPinned {
+		if p.Run.DatabaseID == runID {
+			m.actionsPinned = append(m.actionsPinned[:i], m.actionsPinned[i+1:]...)
+			if m.actionsPinnedIndex >= len(m.actionsPinned) && m.actionsPinnedIndex > 0 {
+				m.actionsPinnedIndex--
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) adjustActionsPinnedScroll() {
+	if len(m.actionsPinned) == 0 {
+		m.actionsPinnedScroll = 0
+		return
+	}
+	// Compute line offsets for each panel: border(2) + title(1) + info(1) + jobs + expanded steps
+	panelStart := 0
+	focusStart := 0
+	focusEnd := 0
+	for i, p := range m.actionsPinned {
+		lines := 2 + 1 + 1 // border top/bottom + title + info line
+		if p.Jobs == nil {
+			lines++ // "Loading jobs..." line
+		} else {
+			lines += len(p.Jobs)
+			for _, j := range p.Jobs {
+				if j.Conclusion == "failure" || j.Status == "in_progress" {
+					for _, s := range j.Steps {
+						if s.Conclusion == "failure" || s.Status == "in_progress" {
+							lines++
+						}
+					}
+				}
+			}
+		}
+		if i == m.actionsPinnedIndex {
+			focusStart = panelStart
+			focusEnd = panelStart + lines
+		}
+		panelStart += lines
+	}
+
+	visibleLines := m.actionsVisibleLines()
+	// Edge-only: scroll down if focused panel's bottom is below viewport
+	if focusEnd > m.actionsPinnedScroll+visibleLines {
+		m.actionsPinnedScroll = focusEnd - visibleLines
+	}
+	// Scroll up if focused panel's top is above viewport
+	if focusStart < m.actionsPinnedScroll {
+		m.actionsPinnedScroll = focusStart
+	}
+	if m.actionsPinnedScroll < 0 {
+		m.actionsPinnedScroll = 0
+	}
+}
+
+func (m *Model) adjustActionsRunScroll(filtered []int) {
+	// Keep highlight visible: 1 line reserved for ColumnBox title
+	visibleLines := m.actionsVisibleLines()
+	highlightLine := m.actionsRunListHighlightLine(filtered)
+	if highlightLine < m.actionsRunScroll {
+		m.actionsRunScroll = highlightLine
+	} else if highlightLine >= m.actionsRunScroll+visibleLines {
+		m.actionsRunScroll = highlightLine - visibleLines + 1
+	}
+	if m.actionsRunScroll < 0 {
+		m.actionsRunScroll = 0
+	}
+}
+
+func (m *Model) actionsVisibleLines() int {
+	bannerLines := 5
+	if m.dryRun {
+		bannerLines += 2
+	}
+	panelHeight := m.height - bannerLines - 3 - 3 - 6 // banner, gaps, status, title+filter
+	if panelHeight < 5 {
+		panelHeight = 5
+	}
+	return panelHeight - 1 // -1 for ColumnBox title
+}
+
+// copyWithFeedback copies text to the clipboard and sets copyFeedback
+func (m *Model) copyWithFeedback(text, successMsg string) {
+	if err := copyToClipboard(text); err == nil {
+		m.copyFeedback = "✓ " + successMsg
+	} else {
+		m.copyFeedback = "✗ Copy failed"
+	}
+}
+
+// mainBranch returns the main branch name for the current repo, defaulting to "main"
+func (m Model) mainBranch() string {
+	if m.repoInfo != nil {
+		return m.repoInfo.MainBranch
+	}
+	return "main"
 }
 
 // New creates a new application model

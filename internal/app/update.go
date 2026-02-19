@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/wahlandcase/attuned.prmanager/internal/models"
 
@@ -82,6 +83,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pullRepoResult:
 		return m.handlePullRepoResult(msg)
+
+	case actionsRunsFetchedResult:
+		return m.handleActionsRunsFetched(msg)
+
+	case actionsRefreshTickMsg:
+		return m.handleActionsRefreshTick()
+
+	case actionsJobsFetchedResult:
+		return m.handleActionsJobsFetched(msg)
 	}
 
 	return m, nil
@@ -129,6 +139,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePullBranchSelectKey(msg)
 	case ScreenPullSummary:
 		return m.handlePullSummaryKey(msg)
+	case ScreenActionsOverview:
+		return m.handleActionsOverviewKey(msg)
 	}
 
 	return m, nil
@@ -143,10 +155,10 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuIndex > 0 {
 			m.menuIndex--
 		} else {
-			m.menuIndex = 3 // Wrap to bottom
+			m.menuIndex = 4 // Wrap to bottom
 		}
 	case "down", "j":
-		if m.menuIndex < 3 {
+		if m.menuIndex < 4 {
 			m.menuIndex++
 		} else {
 			m.menuIndex = 0 // Wrap to top
@@ -163,6 +175,12 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.menuIndex = 2
 		return m.selectMainMenuItem()
 	case "4":
+		m.menuIndex = 3
+		return m.selectMainMenuItem()
+	case "5":
+		m.menuIndex = 4
+		return m.selectMainMenuItem()
+	case "a":
 		m.menuIndex = 3
 		return m.selectMainMenuItem()
 	case "u":
@@ -191,7 +209,7 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) selectMainMenuItem() (tea.Model, tea.Cmd) {
 	// Check for auth error before any GitHub operation (except Quit)
-	if m.authError != nil && m.menuIndex != 3 {
+	if m.authError != nil && m.menuIndex != 4 {
 		m.screen = ScreenError
 		m.errorMessage = m.authError.Error()
 		return m, nil
@@ -211,7 +229,12 @@ func (m Model) selectMainMenuItem() (tea.Model, tea.Cmd) {
 		m.menuIndex = 0
 	case 2: // View Open PRs
 		return m.navigateToMergePRs()
-	case 3: // Quit
+	case 3: // GitHub Actions
+		m.actionsLoading = true
+		m.screen = ScreenLoading
+		m.loadingMessage = "Fetching workflow runs..."
+		return m, fetchActionsRunsCmd(m.config, m.dryRun)
+	case 4: // Quit
 		m.shouldQuit = true
 		return m, tea.Quit
 	}
@@ -263,12 +286,12 @@ func (m Model) selectPrType() (tea.Model, tea.Cmd) {
 		// Create channel for background fetch results
 		m.batchResultsChan = make(chan batchRepoCommitResult, 50)
 		return m, loadBatchReposCmd(m.config, m.prType, m.dryRun, m.batchResultsChan)
-	} else {
-		// Single mode - start fetching commits
-		m.screen = ScreenLoading
-		m.loadingMessage = "Fetching branches and commits..."
-		return m, fetchCommitsCmd(m.repoInfo, m.prType, m.config.TicketRegex(), m.dryRun)
 	}
+
+	// Single mode - start fetching commits
+	m.screen = ScreenLoading
+	m.loadingMessage = "Fetching branches and commits..."
+	return m, fetchCommitsCmd(m.repoInfo, m.prType, m.config.TicketRegex(), m.dryRun)
 }
 
 func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -280,11 +303,7 @@ func (m Model) handleCommitReviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Use default title if none entered
 		if m.prTitle == "" && m.prType != nil {
-			mainBranch := "main"
-			if m.repoInfo != nil {
-				mainBranch = m.repoInfo.MainBranch
-			}
-			m.prTitle = m.prType.DefaultTitle(mainBranch)
+			m.prTitle = m.prType.DefaultTitle(m.mainBranch())
 		}
 		// Go directly to confirmation (skip title input screen)
 		if m.mode != nil && *m.mode == ModeBatch {
@@ -323,11 +342,7 @@ func (m Model) handleTitleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		if m.prTitle == "" && m.prType != nil {
-			mainBranch := "main"
-			if m.repoInfo != nil {
-				mainBranch = m.repoInfo.MainBranch
-			}
-			m.prTitle = m.prType.DefaultTitle(mainBranch)
+			m.prTitle = m.prType.DefaultTitle(m.mainBranch())
 		}
 		if m.mode != nil && *m.mode == ModeBatch {
 			m.screen = ScreenBatchConfirmation
@@ -499,11 +514,7 @@ func (m Model) handleCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				repoName = m.repoInfo.DisplayName
 			}
 			formatted := fmt.Sprintf("- %s: %s", repoName, m.prURL)
-			if err := copyToClipboard(formatted); err == nil {
-				m.copyFeedback = "✓ Copied URL!"
-			} else {
-				m.copyFeedback = "✗ Copy failed"
-			}
+			m.copyWithFeedback(formatted, "Copied URL!")
 		}
 		return m, nil
 	case "enter", "esc":
@@ -620,83 +631,65 @@ func (m *Model) getFilteredBatchRepos(column int) []int {
 	filter := strings.ToLower(m.batchFilter)
 
 	for i, repo := range m.batchRepos {
-		name := repo.DisplayName
-
-		// Determine if this repo belongs to the column
-		isFrontend := strings.Contains(name, "frontend/") || strings.HasPrefix(name, "frontend")
-		isBackend := strings.Contains(name, "backend/") || strings.HasPrefix(name, "backend") ||
-			strings.Contains(name, "services/") || strings.HasPrefix(name, "services")
-
-		// Column 0 = frontend, column 1 = backend
-		inColumn := (column == 0 && isFrontend) || (column == 1 && (isBackend || (!isFrontend && !isBackend)))
-
-		if !inColumn {
+		if !repo.InColumn(column) {
 			continue
 		}
-
-		// Apply filter
-		if filter != "" && !strings.Contains(strings.ToLower(name), filter) {
+		if filter != "" && !strings.Contains(strings.ToLower(repo.DisplayName), filter) {
 			continue
 		}
-
 		indices = append(indices, i)
 	}
 
 	return indices
 }
 
-func (m *Model) navigateBatchColumn(up bool) {
-	filtered := m.getFilteredBatchRepos(m.batchColumn)
-	if len(filtered) == 0 {
+// navigateColumnIndex wraps up/down navigation within a filtered list
+func navigateColumnIndex(idx *int, listLen int, up bool) {
+	if listLen == 0 {
 		return
 	}
-
-	// Get current index for this column
-	var currentIdx *int
-	if m.batchColumn == 0 {
-		currentIdx = &m.batchFEIndex
-	} else {
-		currentIdx = &m.batchBEIndex
-	}
-
 	if up {
-		if *currentIdx > 0 {
-			*currentIdx--
+		if *idx > 0 {
+			*idx--
 		} else {
-			*currentIdx = len(filtered) - 1 // Wrap to bottom
+			*idx = listLen - 1
 		}
 	} else {
-		if *currentIdx < len(filtered)-1 {
-			*currentIdx++
+		if *idx < listLen-1 {
+			*idx++
 		} else {
-			*currentIdx = 0 // Wrap to top
+			*idx = 0
 		}
+	}
+}
+
+func (m *Model) navigateBatchColumn(up bool) {
+	filtered := m.getFilteredBatchRepos(m.batchColumn)
+	if m.batchColumn == 0 {
+		navigateColumnIndex(&m.batchFEIndex, len(filtered), up)
+	} else {
+		navigateColumnIndex(&m.batchBEIndex, len(filtered), up)
+	}
+}
+
+// toggleSelection toggles a boolean in a selection slice at the index pointed to by the current column position
+func toggleSelection(selected []bool, filtered []int, currentIdx int) {
+	if currentIdx >= len(filtered) {
+		return
+	}
+	idx := filtered[currentIdx]
+	if idx < len(selected) {
+		selected[idx] = !selected[idx]
 	}
 }
 
 func (m *Model) toggleBatchSelection() {
 	filtered := m.getFilteredBatchRepos(m.batchColumn)
-	if len(filtered) == 0 {
-		return
-	}
-
-	// Get current index for this column
-	var currentIdx int
-	if m.batchColumn == 0 {
-		currentIdx = m.batchFEIndex
-	} else {
+	currentIdx := m.batchFEIndex
+	if m.batchColumn == 1 {
 		currentIdx = m.batchBEIndex
 	}
-
-	if currentIdx >= len(filtered) {
-		return
-	}
-
-	// Get the actual repo index
-	repoIdx := filtered[currentIdx]
-	if repoIdx < len(m.batchSelected) {
-		m.batchSelected[repoIdx] = !m.batchSelected[repoIdx]
-	}
+	toggleSelection(m.batchSelected, filtered, currentIdx)
 }
 
 func (m Model) handleBatchSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -732,11 +725,7 @@ func (m Model) handleBatchSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if len(lines) > 0 {
-			if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
-				m.copyFeedback = "✓ Copied URLs!"
-			} else {
-				m.copyFeedback = "✗ Copy failed"
-			}
+			m.copyWithFeedback(strings.Join(lines, "\n"), "Copied URLs!")
 		}
 		return m, nil
 	case "enter", "esc":
@@ -821,11 +810,7 @@ func (m Model) handleViewOpenPrsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				lines = append(lines, fmt.Sprintf("- %s: %s", pr.Repo.DisplayName, pr.URL))
 			}
 			if len(lines) > 0 {
-				if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
-					m.copyFeedback = "✓ Copied URLs!"
-				} else {
-					m.copyFeedback = "✗ Copy failed"
-				}
+				m.copyWithFeedback(strings.Join(lines, "\n"), "Copied URLs!")
 			}
 			return m, nil
 		}
@@ -855,56 +840,20 @@ func (m *Model) getFilteredMergePRs(column int) []int {
 
 func (m *Model) navigateMergeColumn(up bool) {
 	filtered := m.getFilteredMergePRs(m.mergeColumn)
-	if len(filtered) == 0 {
-		return
-	}
-
-	// Get current index for this column
-	var currentIdx *int
 	if m.mergeColumn == 0 {
-		currentIdx = &m.mergeDevIndex
+		navigateColumnIndex(&m.mergeDevIndex, len(filtered), up)
 	} else {
-		currentIdx = &m.mergeMainIndex
-	}
-
-	if up {
-		if *currentIdx > 0 {
-			*currentIdx--
-		} else {
-			*currentIdx = len(filtered) - 1 // Wrap to bottom
-		}
-	} else {
-		if *currentIdx < len(filtered)-1 {
-			*currentIdx++
-		} else {
-			*currentIdx = 0 // Wrap to top
-		}
+		navigateColumnIndex(&m.mergeMainIndex, len(filtered), up)
 	}
 }
 
 func (m *Model) toggleMergeSelection() {
 	filtered := m.getFilteredMergePRs(m.mergeColumn)
-	if len(filtered) == 0 {
-		return
-	}
-
-	// Get current index for this column
-	var currentIdx int
-	if m.mergeColumn == 0 {
-		currentIdx = m.mergeDevIndex
-	} else {
+	currentIdx := m.mergeDevIndex
+	if m.mergeColumn == 1 {
 		currentIdx = m.mergeMainIndex
 	}
-
-	if currentIdx >= len(filtered) {
-		return
-	}
-
-	// Get the actual PR index
-	prIdx := filtered[currentIdx]
-	if prIdx < len(m.mergeSelected) {
-		m.mergeSelected[prIdx] = !m.mergeSelected[prIdx]
-	}
+	toggleSelection(m.mergeSelected, filtered, currentIdx)
 }
 
 func (m *Model) selectAllInColumn() {
@@ -965,11 +914,7 @@ func (m Model) handleMergeSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if len(lines) > 0 {
-			if err := copyToClipboard(strings.Join(lines, "\n")); err == nil {
-				m.copyFeedback = "✓ Copied URLs!"
-			} else {
-				m.copyFeedback = "✗ Copy failed"
-			}
+			m.copyWithFeedback(strings.Join(lines, "\n"), "Copied URLs!")
 		}
 		return m, nil
 	case "enter", "esc":
@@ -1099,11 +1044,7 @@ func (m Model) handleSessionHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.historyIndex < len(m.sessionPRs) {
 			pr := m.sessionPRs[m.historyIndex]
 			formatted := fmt.Sprintf("- %s: %s", pr.repoName, pr.url)
-			if err := copyToClipboard(formatted); err == nil {
-				m.copyFeedback = "✓ Copied!"
-			} else {
-				m.copyFeedback = "✗ Copy failed"
-			}
+			m.copyWithFeedback(formatted, "Copied!")
 		}
 		return m, nil
 	case "esc", "enter":
@@ -1111,6 +1052,158 @@ func (m Model) handleSessionHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.menuIndex = 0
 	}
 	return m, nil
+}
+
+// GitHub Actions key handlers
+
+func (m Model) handleActionsOverviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.getFilteredActions()
+
+	// Right column: up/down navigates pinned panels
+	if m.actionsColumn == 1 {
+		switch msg.Type {
+		case tea.KeyUp:
+			if m.actionsPinnedIndex > 0 {
+				m.actionsPinnedIndex--
+				m.adjustActionsPinnedScroll()
+			}
+		case tea.KeyDown:
+			if m.actionsPinnedIndex < len(m.actionsPinned)-1 {
+				m.actionsPinnedIndex++
+				m.adjustActionsPinnedScroll()
+			}
+		case tea.KeyLeft:
+			m.actionsColumn = 0
+		case tea.KeyEsc:
+			m.actionsColumn = 0
+		case tea.KeyCtrlC:
+			m.shouldQuit = true
+			return m, tea.Quit
+		case tea.KeyRunes:
+			switch string(msg.Runes) {
+			case "o":
+				if m.actionsPinnedIndex < len(m.actionsPinned) {
+					panel := m.actionsPinned[m.actionsPinnedIndex]
+					if panel.Run.URL != "" {
+						_ = openURL(panel.Run.URL)
+					}
+				}
+			case "q":
+				m.shouldQuit = true
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
+	// Left column
+	switch msg.Type {
+	case tea.KeyUp:
+		navigateColumnIndex(&m.actionsIndex, len(filtered), true)
+		m.adjustActionsRunScroll(filtered)
+	case tea.KeyDown:
+		navigateColumnIndex(&m.actionsIndex, len(filtered), false)
+		m.adjustActionsRunScroll(filtered)
+	case tea.KeyLeft:
+		// no-op, already in left column
+	case tea.KeyRight:
+		if len(m.actionsPinned) > 0 {
+			m.actionsColumn = 1
+			m.actionsPinnedIndex = 0
+		}
+	case tea.KeySpace:
+		if m.actionsIndex >= len(filtered) {
+			return m, nil
+		}
+		entry := m.actionsEntries[filtered[m.actionsIndex]]
+		if m.unpinRun(entry.Run.DatabaseID) {
+			return m, nil
+		}
+		m.actionsPinned = append(m.actionsPinned, actionsPanel{
+			Run:  entry.Run,
+			Repo: entry.Repo,
+		})
+		return m, fetchActionsJobsCmd(entry.Repo.Path, entry.Run.DatabaseID, m.dryRun)
+	case tea.KeyEsc:
+		if m.actionsFilterActive {
+			m.actionsFilterActive = false
+			m.actionsFilter = ""
+			m.actionsIndex = 0
+			m.actionsRunScroll = 0
+		} else {
+			return m.reset()
+		}
+	case tea.KeyBackspace:
+		if m.actionsFilterActive && len(m.actionsFilter) > 0 {
+			m.actionsFilter = m.actionsFilter[:len(m.actionsFilter)-1]
+			m.actionsIndex = 0
+			m.actionsRunScroll = 0
+		}
+	case tea.KeyCtrlC:
+		m.shouldQuit = true
+		return m, tea.Quit
+	case tea.KeyRunes:
+		key := string(msg.Runes)
+		if m.actionsFilterActive {
+			m.actionsFilter += key
+			m.actionsIndex = 0
+			m.actionsRunScroll = 0
+			return m, nil
+		}
+		switch key {
+		case "q":
+			m.shouldQuit = true
+			return m, tea.Quit
+		case "/":
+			m.actionsFilterActive = true
+		case "a":
+			var cmds []tea.Cmd
+			for _, idx := range filtered {
+				entry := m.actionsEntries[idx]
+				if m.isPinned(entry.Run.DatabaseID) {
+					continue
+				}
+				m.actionsPinned = append(m.actionsPinned, actionsPanel{
+					Run:  entry.Run,
+					Repo: entry.Repo,
+				})
+				cmds = append(cmds, fetchActionsJobsCmd(entry.Repo.Path, entry.Run.DatabaseID, m.dryRun))
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
+			}
+		case "n":
+			m.actionsPinned = nil
+			m.actionsPinnedIndex = 0
+		case "o":
+			if m.actionsIndex < len(filtered) {
+				entry := m.actionsEntries[filtered[m.actionsIndex]]
+				if entry.Run.URL != "" {
+					_ = openURL(entry.Run.URL)
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
+// getFilteredActions returns indices of entries matching the text filter (flat, no columns)
+func (m *Model) getFilteredActions() []int {
+	filter := strings.ToLower(m.actionsFilter)
+	var indices []int
+	for i, entry := range m.actionsEntries {
+		if filter == "" || matchesActionsFilter(entry, filter) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+func matchesActionsFilter(entry actionsEntry, filter string) bool {
+	return strings.Contains(strings.ToLower(entry.Repo.DisplayName), filter) ||
+		strings.Contains(strings.ToLower(entry.Run.WorkflowName), filter) ||
+		strings.Contains(strings.ToLower(entry.Run.HeadBranch), filter) ||
+		strings.Contains(strings.ToLower(entry.Run.DisplayTitle), filter)
 }
 
 func (m Model) reset() (tea.Model, tea.Cmd) {
@@ -1127,7 +1220,6 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	m.prURL = ""
 	m.batchRepos = nil
 	m.batchRepoCommits = nil
-	m.batchResultsChan = nil
 	m.batchFetchPending = 0
 	m.batchSelected = nil
 	m.batchResults = nil
@@ -1148,6 +1240,18 @@ func (m Model) reset() (tea.Model, tea.Cmd) {
 	m.pullRepos = nil
 	m.pullResults = nil
 	m.pullCurrentIdx = 0
+	// Reset actions state
+	m.actionsEntries = nil
+	m.actionsIndex = 0
+	m.actionsLoading = false
+	m.actionsLastRefresh = time.Time{}
+	m.actionsFilter = ""
+	m.actionsFilterActive = false
+	m.actionsPinned = nil
+	m.actionsColumn = 0
+	m.actionsPinnedIndex = 0
+	m.actionsPinnedScroll = 0
+	m.actionsRunScroll = 0
 	return m, nil
 }
 

@@ -168,6 +168,50 @@ func MergePR(repoPath string, prNumber uint64) error {
 	return nil
 }
 
+// ListWorkflowRuns lists recent workflow runs for a repo
+func ListWorkflowRuns(repoPath string, limit int) ([]models.WorkflowRun, error) {
+	cmd := exec.Command("gh", "run", "list",
+		"--json", "databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,url,createdAt,updatedAt",
+		"--limit", strconv.Itoa(limit),
+	)
+	cmd.Dir = repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh run list failed: %s", string(output))
+	}
+
+	var runs []models.WorkflowRun
+	if err := json.Unmarshal(output, &runs); err != nil {
+		return nil, fmt.Errorf("failed to parse gh run list output: %w", err)
+	}
+
+	return runs, nil
+}
+
+// GetWorkflowRunJobs gets the jobs for a specific workflow run
+func GetWorkflowRunJobs(repoPath string, runID uint64) ([]models.WorkflowJob, error) {
+	cmd := exec.Command("gh", "run", "view",
+		strconv.FormatUint(runID, 10),
+		"--json", "jobs",
+	)
+	cmd.Dir = repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh run view failed: %s", string(output))
+	}
+
+	var result struct {
+		Jobs []models.WorkflowJob `json:"jobs"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse gh run view output: %w", err)
+	}
+
+	return result.Jobs, nil
+}
+
 // CreateOrUpdatePR creates a new PR or updates an existing one
 func CreateOrUpdatePR(repoPath, headBranch, baseBranch, title string, tickets []string, linearOrg string) (*models.GhPr, bool, error) {
 	body := GeneratePRBody(tickets, linearOrg)
