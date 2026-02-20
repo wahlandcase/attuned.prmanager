@@ -128,9 +128,7 @@ func WorkflowStatusIcon(status, conclusion string, spinnerFrame int) (string, li
 		return "✓", ColorGreen
 	case conclusion == "failure":
 		return "✗", ColorRed
-	case conclusion == "cancelled":
-		return "⊘", ColorDarkGray
-	case conclusion == "skipped":
+	case conclusion == "cancelled" || conclusion == "skipped":
 		return "⊘", ColorDarkGray
 	default:
 		return "?", ColorDarkGray
@@ -229,7 +227,7 @@ func MenuInfoPanel(index int) (title string, lines []string) {
 			"       " + failStyle.Render("✗") + " Test  " + dimStyle.Render("◌") + " Lint",
 			"",
 			"  • Monitor all workflow runs",
-			"  • Auto-refresh every 10s",
+			"  • Auto-refresh every 5s",
 			"  • Drill into job details",
 			"  • Open runs in browser",
 		}

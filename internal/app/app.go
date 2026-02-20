@@ -366,6 +366,26 @@ func (m *Model) batchConfirmContentLines() int {
 	return totalLines
 }
 
+// scrollBatchConfirm scrolls the batch confirmation right column by delta (-1 or +1)
+func (m *Model) scrollBatchConfirm(delta int) {
+	visibleHeight := m.height - 10
+	if visibleHeight < 10 {
+		visibleHeight = 10
+	}
+	maxScroll := m.batchConfirmContentLines() - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	m.batchConfirmScroll += delta
+	if m.batchConfirmScroll < 0 {
+		m.batchConfirmScroll = 0
+	}
+	if m.batchConfirmScroll > maxScroll {
+		m.batchConfirmScroll = maxScroll
+	}
+}
+
 // updateAnimations updates all animation state
 func (m *Model) updateAnimations() {
 	// Update pulse phase (smooth sine wave)

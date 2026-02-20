@@ -513,11 +513,9 @@ func startBatchProcessingCmd(m *Model, repoIndex int) tea.Cmd {
 			}}
 		}
 
-		var status models.BatchStatus
+		status := models.Created
 		if updated {
 			status = models.Updated
-		} else {
-			status = models.Created
 		}
 
 		return batchRepoResult{result: models.BatchResult{
@@ -1313,19 +1311,9 @@ func (m Model) handleActionsRefreshTick() (tea.Model, tea.Cmd) {
 
 func (m Model) handleActionsJobsFetched(msg actionsJobsFetchedResult) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		// Inline unpin — can't call pointer receiver unpinRun from value receiver
-		for i, p := range m.actionsPinned {
-			if p.Run.DatabaseID == msg.runID {
-				m.actionsPinned = append(m.actionsPinned[:i], m.actionsPinned[i+1:]...)
-				if m.actionsPinnedIndex >= len(m.actionsPinned) && m.actionsPinnedIndex > 0 {
-					m.actionsPinnedIndex--
-				}
-				break
-			}
-		}
+		m.unpinRun(msg.runID)
 		return m, nil
 	}
-	// Find the pinned panel by runID and set its jobs
 	for i, p := range m.actionsPinned {
 		if p.Run.DatabaseID == msg.runID {
 			m.actionsPinned[i].Jobs = msg.jobs

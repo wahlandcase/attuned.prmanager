@@ -10,6 +10,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// numKeyIndex converts a number key string ("1"-"9") to a 0-based index.
+// Returns (index, true) if the key is a valid number within maxItems, or (0, false) otherwise.
+func numKeyIndex(key string, maxItems int) (int, bool) {
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		idx := int(key[0] - '1')
+		if idx < maxItems {
+			return idx, true
+		}
+	}
+	return 0, false
+}
+
 // cancelBatchFetch cancels background fetches (channel is closed by sender goroutine)
 func (m *Model) cancelBatchFetch() {
 	if m.batchFetchCancel != nil {
@@ -163,22 +175,10 @@ func (m Model) handleMainMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.menuIndex = 0 // Wrap to top
 		}
-	case "enter":
-		return m.selectMainMenuItem()
-	case "1":
-		m.menuIndex = 0
-		return m.selectMainMenuItem()
-	case "2":
-		m.menuIndex = 1
-		return m.selectMainMenuItem()
-	case "3":
-		m.menuIndex = 2
-		return m.selectMainMenuItem()
-	case "4":
-		m.menuIndex = 3
-		return m.selectMainMenuItem()
-	case "5":
-		m.menuIndex = 4
+	case "enter", "1", "2", "3", "4", "5":
+		if idx, ok := numKeyIndex(msg.String(), 5); ok {
+			m.menuIndex = idx
+		}
 		return m.selectMainMenuItem()
 	case "a":
 		m.menuIndex = 3
@@ -258,13 +258,10 @@ func (m Model) handlePrTypeSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.menuIndex = 0
 		}
-	case "enter":
-		return m.selectPrType()
-	case "1":
-		m.menuIndex = 0
-		return m.selectPrType()
-	case "2":
-		m.menuIndex = 1
+	case "enter", "1", "2":
+		if idx, ok := numKeyIndex(msg.String(), 2); ok {
+			m.menuIndex = idx
+		}
 		return m.selectPrType()
 	case "esc":
 		m.screen = ScreenMainMenu
@@ -378,43 +375,12 @@ func (m Model) handleConfirmationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "left", "right", "tab":
 		m.confirmSelection = 1 - m.confirmSelection
 	case "up":
-		// Scroll up in batch confirmation right column
 		if m.screen == ScreenBatchConfirmation {
-			// First clamp to max in case we're somehow beyond it
-			totalLines := m.batchConfirmContentLines()
-			visibleHeight := m.height - 10
-			if visibleHeight < 10 {
-				visibleHeight = 10
-			}
-			maxScroll := totalLines - visibleHeight
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.batchConfirmScroll > maxScroll {
-				m.batchConfirmScroll = maxScroll
-			}
-			// Then scroll up if possible
-			if m.batchConfirmScroll > 0 {
-				m.batchConfirmScroll--
-			}
+			m.scrollBatchConfirm(-1)
 		}
 	case "down":
-		// Scroll down in batch confirmation right column
 		if m.screen == ScreenBatchConfirmation {
-			// Calculate max scroll based on content and visible height
-			totalLines := m.batchConfirmContentLines()
-			// Estimate visible height (will be clamped in view anyway)
-			visibleHeight := m.height - 10
-			if visibleHeight < 10 {
-				visibleHeight = 10
-			}
-			maxScroll := totalLines - visibleHeight
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.batchConfirmScroll < maxScroll {
-				m.batchConfirmScroll++
-			}
+			m.scrollBatchConfirm(1)
 		}
 	case "y":
 		m.confirmSelection = 0
@@ -1280,16 +1246,10 @@ func (m Model) handlePullBranchSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.menuIndex = 0 // Wrap to top
 		}
-	case "enter":
-		return m.selectPullBranch()
-	case "1":
-		m.menuIndex = 0
-		return m.selectPullBranch()
-	case "2":
-		m.menuIndex = 1
-		return m.selectPullBranch()
-	case "3":
-		m.menuIndex = 2
+	case "enter", "1", "2", "3":
+		if idx, ok := numKeyIndex(msg.String(), 3); ok {
+			m.menuIndex = idx
+		}
 		return m.selectPullBranch()
 	case "esc":
 		m.screen = ScreenMainMenu

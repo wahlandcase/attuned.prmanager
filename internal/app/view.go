@@ -1996,7 +1996,7 @@ func (m Model) renderActionsOverviewWithHeight(availableHeight int) string {
 	titleBox := ui.FilterInput(m.actionsFilter, titleText, ui.ColorOrange, contentWidth-2)
 
 	// Column widths
-	leftWidth := contentWidth / 3
+	leftWidth := contentWidth * 2 / 5
 	rightWidth := contentWidth - leftWidth - 2
 
 	// Build left panel: repo-grouped run list
@@ -2089,27 +2089,32 @@ func (m Model) renderActionsRunList(filtered []int, width int) []string {
 		checkStyle := lipgloss.NewStyle().Foreground(iconColor)
 		checkbox := checkStyle.Render(ui.Checkbox(pinned))
 
-		// Workflow + branch (truncate to fit)
+		// Workflow + branch + time + run ID (truncate to fit)
 		nameStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite)
 		if highlighted {
 			nameStyle = nameStyle.Bold(true)
 		}
 		branchStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(entry.Run.HeadBranch))
+		timeStr := relativeTime(entry.Run.UpdatedAt)
+		runIDStr := fmt.Sprintf("#%d", entry.Run.DatabaseID)
+		suffixLen := len(timeStr) + 1 + len(runIDStr) + 1 // time + space + id + space
 
-		maxNameLen := width - 14 // arrow(2) + checkbox(3) + icon(2) + spaces(4) + margin(3)
+		maxNameLen := width - 14 - suffixLen // arrow(2) + checkbox(3) + icon(2) + spaces(4) + margin(3) + suffix
 		if maxNameLen < 10 {
 			maxNameLen = 10
 		}
 		nameAndBranch := entry.Run.WorkflowName + " " + entry.Run.HeadBranch
 		truncated := truncateString(nameAndBranch, maxNameLen)
 		if truncated != nameAndBranch {
-			lines = append(lines, fmt.Sprintf(" %s%s %s %s",
-				arrow, checkbox, iconStyle.Render(icon), nameStyle.Render(truncated)))
+			lines = append(lines, fmt.Sprintf(" %s%s %s %s %s %s",
+				arrow, checkbox, iconStyle.Render(icon), nameStyle.Render(truncated),
+				dimStyle.Render(timeStr), dimStyle.Render(runIDStr)))
 		} else {
-			lines = append(lines, fmt.Sprintf(" %s%s %s %s %s",
+			lines = append(lines, fmt.Sprintf(" %s%s %s %s %s %s %s",
 				arrow, checkbox, iconStyle.Render(icon),
 				nameStyle.Render(entry.Run.WorkflowName),
-				branchStyle.Render(entry.Run.HeadBranch)))
+				branchStyle.Render(entry.Run.HeadBranch),
+				dimStyle.Render(timeStr), dimStyle.Render(runIDStr)))
 		}
 	}
 
@@ -2203,12 +2208,13 @@ func (m Model) renderPinnedPanel(panel actionsPanel, borderColor lipgloss.Color,
 	branchStyle := lipgloss.NewStyle().Foreground(ui.BranchColor(panel.Run.HeadBranch))
 	timeStyle := lipgloss.NewStyle().Foreground(ui.ColorDarkGray)
 
-	infoLine := fmt.Sprintf(" %s %s  %s  %s  %s",
+	infoLine := fmt.Sprintf(" %s %s  %s  %s  %s  %s",
 		statusStyle.Render(statusIcon),
 		nameStyle.Render(panel.Run.WorkflowName),
 		branchStyle.Render(panel.Run.HeadBranch),
 		lipgloss.NewStyle().Foreground(ui.ColorWhite).Render(truncateString(panel.Run.DisplayTitle, 30)),
 		timeStyle.Render(relativeTime(panel.Run.UpdatedAt)),
+		timeStyle.Render(fmt.Sprintf("#%d", panel.Run.DatabaseID)),
 	)
 
 	if panel.Jobs == nil {
